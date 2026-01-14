@@ -311,10 +311,12 @@ def parse_pdf(pdf_path):
                 student_data['status'] = 'Passed'
             elif re.search(r"Result\s*:\s*Failed", text, re.IGNORECASE):
                 student_data['status'] = 'Failed'
+                student_data['gpa'] = 0.00  # Failed students have 0.00 GPA
             elif re.search(r"\bPassed\b", text, re.IGNORECASE):
                 student_data['status'] = 'Passed'
             elif re.search(r"\bFailed\b", text, re.IGNORECASE):
                 student_data['status'] = 'Failed'
+                student_data['gpa'] = 0.00  # Failed students have 0.00 GPA
             
             # --- Extract Subject Table ---
             tables = page.extract_tables()

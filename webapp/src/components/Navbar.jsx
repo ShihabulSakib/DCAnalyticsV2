@@ -1,53 +1,167 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { Moon, Sun, GraduationCap } from 'lucide-react';
+// eslint-disable-next-line no-unused-vars
+import { motion, AnimatePresence } from 'framer-motion';
 
-import React, { useState, useEffect } from 'react';
-import { Moon, Sun, Search, GraduationCap } from 'lucide-react';
+const Navbar = ({ toggleTheme, isDark, exams = [], selectedExam, onExamChange }) => {
+  const [open, setOpen] = useState(false);
+  const [highlight, setHighlight] = useState(0);
+  const containerRef = useRef(null);
 
-const Navbar = ({ toggleTheme, isDark, exams = [], selectedExam, onExamChange, onLogout }) => {
-    return (
-        <nav className="bg-white dark:bg-dark-card border-b border-gray-200 dark:border-gray-700 shadow-sm transition-colors duration-200">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div className="flex justify-between h-16">
-                    <div className="flex items-center gap-6">
-                        <div className="flex items-center">
-                            <GraduationCap className="h-8 w-8 text-indigo-600 dark:text-indigo-400 mr-2" />
-                            <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-400 dark:to-purple-400 font-display hidden md:block">
-                                DCAnalytics
-                            </span>
-                        </div>
+  const selected = exams.find(e => e.id === selectedExam) || null;
 
-                        {/* Exam Selector */}
-                        <div className="relative group">
-                            <select
-                                value={selectedExam || ''}
-                                onChange={(e) => onExamChange && onExamChange(e.target.value)}
-                                className="appearance-none bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 py-2 pl-4 pr-10 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm font-medium transition-all cursor-pointer min-w-[200px]"
-                            >
-                                {exams.map(exam => (
-                                    <option key={exam.id} value={exam.id}>{exam.name}</option>
-                                ))}
-                            </select>
-                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
-                                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
-                            </div>
-                        </div>
-                    </div>
+  useEffect(() => {
+    function onOutside(e) {
+      if (containerRef.current && !containerRef.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener('mousedown', onOutside);
+    return () => document.removeEventListener('mousedown', onOutside);
+  }, []);
 
-                    <div className="flex items-center space-x-4">
-                        <button
-                            onClick={toggleTheme}
-                            className="p-2 rounded-full text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
-                            aria-label="Toggle Dark Mode"
-                        >
-                            {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-                        </button>
-                        <div className="hidden md:flex items-center space-x-2">
-                            <span className="text-sm text-gray-500 dark:text-gray-400">v1.0</span>
-                        </div>
-                    </div>
-                </div>
+  function toggleOpen() {
+    if (!open) setHighlight(0);
+    setOpen(o => !o);
+  }
+
+  function onKeyDown(e) {
+    if (!open) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        setHighlight(0);
+        setOpen(true);
+      }
+      return;
+    }
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlight(h => Math.min(h + 1, exams.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlight(h => Math.max(h - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const opt = exams[highlight];
+      if (opt) {
+        onExamChange && onExamChange(opt.id);
+        setOpen(false);
+      }
+    } else if (e.key === 'Escape') {
+      setOpen(false);
+    }
+  }
+
+  function selectOption(opt) {
+    onExamChange && onExamChange(opt.id);
+    setOpen(false);
+  }
+
+  return (
+    <nav className="bg-white dark:bg-dark-card border-b border-gray-200 dark:border-gray-700 shadow-sm transition-colors duration-200">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex justify-between h-16">
+          <div className="flex items-center gap-6">
+            <div className="flex items-center">
+              <GraduationCap className="h-8 w-8 text-indigo-600 dark:text-indigo-400 mr-2" />
+              <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-400 dark:to-purple-400 font-display hidden md:block">
+                DCAnalytics
+              </span>
             </div>
-        </nav>
-    );
+
+            {/* Animated Exam Selector (searchless) */}
+            <div className="relative" ref={containerRef}>
+              <button
+                type="button"
+                aria-haspopup="listbox"
+                aria-expanded={open}
+                onClick={toggleOpen}
+                onKeyDown={onKeyDown}
+                className={
+                  "appearance-none bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 py-2 pl-4 pr-10 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm font-medium transition-all cursor-pointer min-w-[200px] flex items-center justify-between " +
+                  (open ? 'ring-2 ring-indigo-300 dark:ring-indigo-700/60' : '')
+                }
+              >
+                <span className="truncate">{selected ? selected.name : 'Select exam'}</span>
+                <svg
+                  className={`h-4 w-4 transform transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  xmlns="http://www.w3.org/2000/svg"
+                  aria-hidden="true"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              <AnimatePresence>
+                {open && (
+                  <motion.ul
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    transition={{ duration: 0.18 }}
+                    role="listbox"
+                    aria-activedescendant={exams[highlight] ? `exam-${exams[highlight].id}` : undefined}
+                    tabIndex={-1}
+                    className={
+                      "absolute mt-2 w-full z-50 rounded-lg shadow-lg overflow-hidden max-h-60 overflow-auto divide-y divide-gray-100 dark:divide-gray-700 " +
+                      (isDark
+                        ? 'bg-gray-800 border border-gray-700'
+                        : 'bg-white')
+                    }
+                  >
+                    {exams.length === 0 ? (
+                      <li className="p-3 text-sm text-gray-400">No exams</li>
+                    ) : (
+                      exams.map((opt, idx) => (
+                        <motion.li
+                          key={opt.id}
+                          id={`exam-${opt.id}`}
+                          role="option"
+                          aria-selected={selected && selected.id === opt.id}
+                          onMouseEnter={() => setHighlight(idx)}
+                          onClick={() => selectOption(opt)}
+                          initial={false}
+                          whileHover={{ scale: 1.01 }}
+                          transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                          className={
+                            `cursor-pointer select-none px-4 py-2 text-sm transition-colors duration-120 ` +
+                            (selected && selected.id === opt.id
+                              ? 'bg-indigo-50 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-100'
+                              : (idx === highlight
+                                  ? 'bg-indigo-50 dark:bg-gray-700 text-indigo-700 dark:text-gray-100'
+                                  : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700')
+                            )
+                          }
+                        >
+                          {opt.name}
+                        </motion.li>
+                      ))
+                    )}
+                  </motion.ul>
+                )}
+              </AnimatePresence>
+            </div>
+
+          </div>
+
+          <div className="flex items-center space-x-4">
+            <button
+              onClick={toggleTheme}
+              className="p-2 rounded-full text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
+              aria-label="Toggle Dark Mode"
+            >
+              {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+            </button>
+            <div className="hidden md:flex items-center space-x-2">
+              <span className="text-sm text-gray-500 dark:text-gray-400">v1.0</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </nav>
+  );
 };
 
 export default Navbar;

@@ -32,8 +32,8 @@ const MeritList = ({ meritList, onSelectStudent, highlightRoll, sortBy, onSortCh
         <div className="bg-white dark:bg-dark-card rounded-xl shadow-lg border border-gray-100 dark:border-gray-700 overflow-hidden h-[500px] flex flex-col transition-colors duration-200">
             {/* Header */}
             <div className="p-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-                <h3 className="text-lg font-bold text-gray-800 dark:text-white flex items-center">
-                    <Award className="h-5 w-5 mr-2 text-indigo-500" />
+                <h3 className="text-lg font-serif font-bold text-gray-800 dark:text-white flex items-center">
+                    <Award className="h-5 w-5 mr-2 text-indigo-500 " />
                     Merit List
                 </h3>
 
