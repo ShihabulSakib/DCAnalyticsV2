@@ -19,19 +19,22 @@ def init_db():
     conn = get_conn()
     try:
         with conn.cursor() as cur:
-            # Note: SERIAL is a PostgreSQL auto-incrementing integer
-            # Note: TIMESTAMP WITH TIME ZONE is recommended for timestamps
-            # Note: FOREIGN KEY constraints and UNIQUE constraints are defined
-            
             cur.execute('''
                 CREATE TABLE IF NOT EXISTS students (
                     id SERIAL PRIMARY KEY,
                     roll TEXT UNIQUE NOT NULL,
                     name TEXT,
                     student_group TEXT,
-                    session TEXT
+                    session TEXT,
+                    image_url TEXT
                 )
             ''')
+
+            # Attempt to add the image_url column if it doesn't exist, for existing tables.
+            try:
+                cur.execute('ALTER TABLE students ADD COLUMN image_url TEXT')
+            except psycopg2.errors.DuplicateColumn:
+                pass # Column already exists, do nothing.
 
             cur.execute('''
                 CREATE TABLE IF NOT EXISTS exams (
@@ -111,6 +114,23 @@ def get_or_create_student_id(roll, name, group, session_year):
                 student_id = cur.fetchone()[0]
                 conn.commit()
                 return student_id
+    finally:
+        conn.close()
+
+def update_student_image_url(roll, image_url):
+    """Updates the student's record with the URL of their profile image."""
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE students SET image_url = %s WHERE roll = %s",
+                (image_url, roll)
+            )
+            conn.commit()
+            print(f"Updated image URL for roll {roll}.")
+    except Exception as e:
+        conn.rollback()
+        print(f"Failed to update image URL for roll {roll}: {e}")
     finally:
         conn.close()
 

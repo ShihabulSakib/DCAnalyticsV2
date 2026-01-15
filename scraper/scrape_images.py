@@ -4,13 +4,27 @@ import os
 import time
 from bs4 import BeautifulSoup
 import sys
+from dotenv import load_dotenv
+import cloudinary
+import cloudinary.uploader
 
-# Constants
+# Import the database function to update the URL
+from database import update_student_image_url
+
+# --- Environment and Cloudinary Configuration ---
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
+
+cloudinary.config(
+  cloud_name = os.getenv("CLOUDINARY_CLOUD_NAME"),
+  api_key = os.getenv("CLOUDINARY_API_KEY"),
+  api_secret = os.getenv("CLOUDINARY_API_SECRET"),
+  secure = True
+)
+
+# --- Constants ---
 LOGIN_URL = 'https://dhakacollege.eshiksabd.com/Authentication'
 CONTROLLER_URL = 'https://dhakacollege.eshiksabd.com/controller_student_module.php'
 BASE_URL = 'https://dhakacollege.eshiksabd.com/'
-IMAGES_DIR = os.path.join(os.path.dirname(__file__), '..', 'data', 'images')
-os.makedirs(IMAGES_DIR, exist_ok=True)
 
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -33,96 +47,80 @@ class ImageScraper:
             print(f"Login Error: {e}")
             return False
 
-    def explore_dashboard(self):
-        print("Exploring Result-Enquiry-Center...")
-        url = BASE_URL + 'Result-Enquiry-Center'
-        resp = self.session.get(url, headers=HEADERS)
-        print(f"Status: {resp.status_code}")
-        
-        with open("debug_enquiry.html", "w", encoding="utf-8") as f:
-            f.write(resp.text)
-        print("Saved debug_enquiry.html")
-        
-        # Quick check for form inputs
-        soup = BeautifulSoup(resp.text, 'html.parser')
-        forms = soup.find_all('form')
-        for i, form in enumerate(forms):
-            print(f"Form {i} Action: {form.get('action')}")
-            for inp in form.find_all('input'):
-                print(f"  Input: {inp.get('name')} (Type: {inp.get('type')})")
-
     def get_image(self, roll, exam_id='280'): 
         print(f"Fetching profile for {roll}...")
         try:
-            # Hit the controller to get the profile HTML
             resp = self.session.post(CONTROLLER_URL, data={'rootData': roll, 'flagreq': 'profileRollCheck'}, headers=HEADERS)
             
             if "Error" in resp.text:
                 print("Student not found or Error.")
                 return False
                 
-            # Parse HTML snippet
             soup = BeautifulSoup(resp.text, 'html.parser')
             
             img = soup.find('img')
             if not img:
                  print("No img tag in response.")
-                 # Debug
-                 with open("debug_profileResponse.html", "w") as f:
-                     f.write(resp.text)
                  return False
                  
             src = img.get('src')
             print(f"Found src: {src}")
             
-            # Handle relative paths
             full_url = src if src.startswith('http') else BASE_URL + src
-            # Fix double slash if any
-            # full_url = full_url.replace('.com//', '.com/') 
             
-            return self.save_image(full_url, roll)
+            # Download the image content
+            img_headers = HEADERS.copy()
+            img_resp = self.session.get(full_url, headers=img_headers)
+
+            if img_resp.status_code == 200:
+                # Instead of saving to disk, pass content to be uploaded
+                return self.upload_image(img_resp.content, roll)
+            else:
+                print(f"Failed to download image from source. Status: {img_resp.status_code}")
+                return False
             
         except Exception as e:
             print(f"Error fetching image: {e}")
             return False
 
-    def save_image(self, url, roll):
-        print(f"Downloading from {url}...")
+    def upload_image(self, image_content, roll):
+        """Uploads image content to Cloudinary and updates the database."""
+        print(f"Uploading image for {roll} to Cloudinary...")
         try:
-            # Note: Some servers block standard requests if Referer/User-Agent isn't set correctly for assets
-            # Let's clean the headers for the image request
-            img_headers = HEADERS.copy()
-            # img_headers['Referer'] = BASE_URL
+            # Upload to Cloudinary, using the roll number as the unique ID
+            upload_result = cloudinary.uploader.upload(
+                image_content,
+                public_id=roll,
+                folder="student_images", # Optional: organize images in a folder
+                overwrite=True
+            )
             
-            resp = self.session.get(url, headers=img_headers)
-            print(f"Status Code: {resp.status_code}")
-            
-            if resp.status_code == 200:
-                save_path = os.path.join(IMAGES_DIR, f"{roll}.jpg")
-                with open(save_path, 'wb') as f:
-                    f.write(resp.content)
-                print(f"Saved to {save_path}")
+            secure_url = upload_result.get('secure_url')
+            if secure_url:
+                print(f"Upload successful. URL: {secure_url}")
+                # Save the new URL to the database
+                update_student_image_url(roll, secure_url)
                 return True
             else:
-                 print(f"Failed to download. Content-Type: {resp.headers.get('Content-Type')}")
+                print("Upload to Cloudinary failed. No secure_url in response.")
+                return False
         except Exception as e:
-            print(f"Save failed: {e}")
-        return False
+            print(f"Cloudinary upload failed: {e}")
+            return False
 
     def run_batch(self, rolls):
         if not self.login():
             return
         
         for roll in rolls:
-            print(f"Processing {roll}...")
+            print(f"\n--- Processing {roll} ---")
             self.get_image(roll)
-            time.sleep(1)
+            time.sleep(1) # Be polite to the server
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python scrape_images.py <roll_start> <roll_end> OR python scrape_images.py <roll>")
     elif len(sys.argv) == 2:
-        # Single roll mode
         roll = sys.argv[1]
         scraper = ImageScraper()
         if scraper.login():

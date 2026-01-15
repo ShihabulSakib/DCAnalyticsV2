@@ -5,8 +5,9 @@ import os
 import time
 from bs4 import BeautifulSoup
 
-# Import from robust_parser
-from robust_parser import init_db, parse_pdf, save_to_db
+# Correctly import from our new modules
+from robust_parser import parse_pdf
+from database import get_or_create_student_id, get_or_create_exam_id, save_result_and_marks, init_db
 
 # --- Configuration ---
 USERNAME = 'dcstudent'
@@ -19,13 +20,14 @@ HEADERS = {
     'X-Requested-With': 'XMLHttpRequest'
 }
 
+# The PDF download directory is temporary and can be cleaned up.
 DOWNLOAD_DIR = os.path.join(os.path.dirname(__file__), '..', 'data', 'pdfs')
 
 class Scraper:
     def __init__(self):
         self.session = requests.Session()
-        # Initialize the new relational DB
-        self.conn = init_db()
+        # Note: We no longer need a persistent DB connection here.
+        # The functions in database.py handle their own connections.
         os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
     def login(self):
@@ -55,23 +57,15 @@ class Scraper:
             resp = self.session.post(CONTROLLER_URL, data=payload, headers=HEADERS)
             soup = BeautifulSoup(resp.text, 'html.parser')
             options = soup.find_all('option')
-            exams = []
-            for opt in options:
-                val = opt.get('value')
-                if val:
-                    exams.append({'id': val, 'name': opt.text.strip()})
+            exams = [{'id': opt.get('value'), 'name': opt.text.strip()} for opt in options if opt.get('value')]
             return exams
         except Exception as e:
             print(f"Error fetching exams: {e}")
             return []
 
-    def scrape_student(self, roll, exam_id):
+    def scrape_student(self, roll, exam_id, exam_name):
         # 1. Check Permission
-        p_payload = {
-            'rootData': exam_id,
-            'stClassRoll': roll,
-            'flagreq': 'checkTranscriptPermission'
-        }
+        p_payload = {'rootData': exam_id, 'stClassRoll': roll, 'flagreq': 'checkTranscriptPermission'}
         try:
             resp = self.session.post(CONTROLLER_URL, data=p_payload, headers=HEADERS)
             if "Error" in resp.text or "not found" in resp.text.lower():
@@ -80,51 +74,60 @@ class Scraper:
             return False, f"Permission Check Error: {e}"
 
         # 2. Get URL
-        t_payload = {
-            'rootData': roll,
-            'examList': exam_id,
-            'flagreq': 'checkStudentTranscript'
-        }
+        t_payload = {'rootData': roll, 'examList': exam_id, 'flagreq': 'checkStudentTranscript'}
         try:
             resp = self.session.post(CONTROLLER_URL, data=t_payload, headers=HEADERS)
             url_part = resp.text.strip()
-            if not url_part:
-                return False, "Empty URL"
-            
+            if not url_part: return False, "Empty URL"
             final_url = url_part if url_part.startswith('http') else BASE_URL + url_part
         except Exception as e:
             return False, f"Get URL Error: {e}"
 
-        # 3. Download
+        # 3. Download PDF to a temporary file
+        filepath = os.path.join(DOWNLOAD_DIR, f"{roll}_{exam_id}.pdf")
         try:
             view_headers = HEADERS.copy()
             if 'X-Requested-With' in view_headers: del view_headers['X-Requested-With']
-            
             pdf_resp = self.session.get(final_url, headers=view_headers)
-            
-            filename = f"{roll}_{exam_id}.pdf"
-            filepath = os.path.join(DOWNLOAD_DIR, filename)
-            
             with open(filepath, 'wb') as f:
                 f.write(pdf_resp.content)
-            
         except Exception as e:
             return False, f"Download Error: {e}"
 
-        # 4. Parse & Save (Using Robust Parser)
+        # 4. Parse & Save using the CORRECT database functions
         try:
-            # Parse using pdfplumber logic from robust_parser.py
             student_data, subjects_data = parse_pdf(filepath)
             
-            if not student_data or not student_data['roll']:
+            if not student_data or not student_data.get('roll'):
                 return False, "Parsing Failed (Content Extraction Error)"
+
+            # Get the primary keys for student and exam
+            student_id_db = get_or_create_student_id(
+                student_data['roll'], 
+                student_data.get('name'), 
+                student_data.get('student_group'), 
+                student_data.get('session')
+            )
+            exam_id_db = get_or_create_exam_id(exam_id, exam_name)
             
-            # Save to Relational DB
-            save_to_db(self.conn, student_data, subjects_data, exam_id)
+            # Structure data for saving
+            result_data = {
+                'gpa': student_data.get('gpa'),
+                'total_marks': student_data.get('total_marks'),
+                'status': student_data.get('status'),
+                'subjects': subjects_data
+            }
+
+            # Save everything to the PostgreSQL database
+            save_result_and_marks(student_id_db, exam_id_db, result_data)
+            
+            # Clean up the downloaded PDF
+            os.remove(filepath)
             
             return True, "Success"
-
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             return False, f"Processing Error: {e}"
 
     def run(self):
@@ -148,44 +151,42 @@ class Scraper:
             
             selected_exam = exams[selection]
             
-            # Save/Update Exam Name in DB
-            print(f"Updating DB with Exam Name: {selected_exam['name']} ({selected_exam['id']})")
-            self.conn.execute(
-                "INSERT INTO exams (id, name) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET name=excluded.name",
-                (selected_exam['id'], selected_exam['name'])
-            )
-            self.conn.commit()
+            # This now correctly uses the PostgreSQL function to ensure the exam is in the DB
+            print(f"Ensuring exam exists in DB: {selected_exam['name']} ({selected_exam['id']})")
+            get_or_create_exam_id(selected_exam['id'], selected_exam['name'])
             
             print(f"\nSelected: {selected_exam['name']}")
             
-            start_roll = input("Enter Start Roll: ").strip()
-            end_roll = input("Enter End Roll: ").strip()
+            start_roll = int(input("Enter Start Roll: ").strip())
+            end_roll = int(input("Enter End Roll: ").strip())
             
-            start = int(start_roll)
-            end = int(end_roll)
-            
-            print(f"\nStarting scraping for rolls {start} to {end}...")
+            print(f"\nStarting scraping for rolls {start_roll} to {end_roll}...")
             
             success_count = 0
-            for r in range(start, end + 1):
+            for r in range(start_roll, end_roll + 1):
                 roll_str = str(r)
                 print(f"Processing Roll {roll_str}...", end=' ', flush=True)
                 
-                success, msg = self.scrape_student(roll_str, selected_exam['id'])
+                success, msg = self.scrape_student(roll_str, selected_exam['id'], selected_exam['name'])
                 if success:
                     print("OK")
                     success_count += 1
                 else:
                     print(f"Failed ({msg})")
                 
-                # Politeness delay
-                time.sleep(0.5)
+                time.sleep(0.5) # Politeness delay
             
             print(f"\nCompleted. Successfully scraped {success_count} results.")
 
         except ValueError:
-            print("Invalid input.")
+            print("Invalid input. Please enter numbers.")
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
 
 if __name__ == "__main__":
+    # Ensure the database is initialized before running the scraper
+    print("Initializing database connection and schema...")
+    init_db() 
+    
     scraper = Scraper()
     scraper.run()

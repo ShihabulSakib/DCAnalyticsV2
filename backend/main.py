@@ -58,10 +58,7 @@ def execute_query(query, params=None, fetch=None):
 # --- FastAPI App Initialization ---
 app = FastAPI()
 
-# Mount images directory
-IMAGES_DIR = os.path.join(os.path.dirname(__file__), '..', 'data', 'images')
-os.makedirs(IMAGES_DIR, exist_ok=True)
-app.mount("/static/images", StaticFiles(directory=IMAGES_DIR), name="images")
+
 
 # Allow CORS for frontend
 app.add_middleware(
