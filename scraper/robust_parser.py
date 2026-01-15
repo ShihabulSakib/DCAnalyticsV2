@@ -40,13 +40,33 @@ def extract_gpa_after_ict(text):
 def extract_gpa_from_table(main_table, header_idx):
     """
     Extract GPA using table structure analysis.
-    Strategy: Find rows after subjects that contain GPA labels and extract the rightmost valid number.
+    Strategy 1: Look for columns with 'GPA' in the header and extract the max valid value.
+    Strategy 2: Find rows with 'GPA' label and extract the rightmost valid number.
     """
     logger.info("Strategy: Extracting GPA from table structure")
     if header_idx is None:
         return None
     
+    headers = [str(h).strip().lower() if h else '' for h in main_table[header_idx]]
     gpa_candidates = []
+
+    # Strategy 1: Check specific GPA columns
+    gpa_col_indices = [i for i, h in enumerate(headers) if 'gpa' in h]
+    if gpa_col_indices:
+        logger.info(f"Found GPA columns at indices: {gpa_col_indices}")
+        for row in main_table[header_idx + 1:]:
+            if not row: continue
+            for col_idx in gpa_col_indices:
+                if col_idx < len(row):
+                    val_str = str(row[col_idx]).strip()
+                    try:
+                        val = float(val_str)
+                        if 0.0 <= val <= 5.0:
+                            gpa_candidates.append({'value': val, 'priority': 2, 'context': f"Column {col_idx}"})
+                    except ValueError:
+                        pass
+    
+    # Strategy 2: Check rows labeled GPA (existing logic)
     for row_idx, row in enumerate(main_table[header_idx + 1:], start=header_idx + 1):
         if not row:
             continue
@@ -61,14 +81,17 @@ def extract_gpa_from_table(main_table, header_idx):
                 try:
                     val = float(dec)
                     if 0.0 <= val <= 5.0:
-                        gpa_candidates.append({'value': val, 'row_idx': row_idx, 'context': row_text[:50]})
+                        gpa_candidates.append({'value': val, 'priority': 1, 'context': row_text[:50]})
                         logger.info(f"  Found GPA candidate: {val}")
                 except ValueError:
                     continue
     
     if gpa_candidates:
-        final_gpa = gpa_candidates[-1]
-        logger.info(f"Selected GPA: {final_gpa['value']} from row: {final_gpa['context']}")
+        # Sort by priority (high to low) then value (high to low)
+        # We assume higher value in GPA column is likely the final result (e.g. vs without additional subj)
+        gpa_candidates.sort(key=lambda x: (x['priority'], x['value']), reverse=True)
+        final_gpa = gpa_candidates[0]
+        logger.info(f"Selected GPA: {final_gpa['value']} from: {final_gpa['context']}")
         return final_gpa['value']
     
     return None
@@ -244,9 +267,13 @@ def parse_pdf(pdf_path):
                             'gp': safe_float(row[gp_col]) if gp_col and gp_col < len(row) else None,
                         })
                 
-                if student_data['gpa'] is None: student_data['gpa'] = extract_gpa_after_ict(text)
+                # Priority 1: Table structure (most reliable if GPA column exists)
                 if student_data['gpa'] is None: student_data['gpa'] = extract_gpa_from_table(main_table, header_idx)
+                # Priority 2: Text pattern after ICT (fallback for specific layout)
+                if student_data['gpa'] is None: student_data['gpa'] = extract_gpa_after_ict(text)
+                # Priority 3: General text patterns
                 if student_data['gpa'] is None: student_data['gpa'] = extract_gpa_from_text(text)
+                
                 logger.info(f"Final GPA extracted: {student_data['gpa']}")
             
             if student_data['status'] == 'Failed' and student_data['gpa'] is None:
