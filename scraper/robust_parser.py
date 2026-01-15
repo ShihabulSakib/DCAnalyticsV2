@@ -216,7 +216,7 @@ def parse_pdf(pdf_path):
                         subject_name = str(row[subj_col]).strip() if subj_col is not None and row[subj_col] else None
                         
                         skip_patterns = [
-                            r'^total', r'^additional subject', r'^মোট', r'^subject', r'^বিষয়', r'^, r'^\d+, r'^gpa',
+                            r'^total', r'^additional subject', r'^মোট', r'^subject', r'^বিষয়', r'^,', r'^\d+', r'^gpa',
                         ]
                         if not subject_name or any(re.match(p, subject_name.lower()) for p in skip_patterns):
                             continue
