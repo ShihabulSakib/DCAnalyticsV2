@@ -1,72 +1,83 @@
-#!/usr/bin/env python3
-"""
-Batch Parser - Process all PDFs in the data/pdfs directory.
-"""
-
 import os
+import re
 import sys
+from robust_parser import parse_pdf
+from database import get_or_create_student_id, get_or_create_exam_id, save_result_and_marks, init_db
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(__file__))
+# The directory where you have stored the result PDFs.
+PDF_DIR = os.path.join(os.path.dirname(__file__), '..', 'data', 'pdfs')
 
-from robust_parser import init_db, parse_pdf, save_to_db
+def process_local_pdfs():
+    """
+    Scans the data/pdfs directory, parses each PDF, and saves the data to the database.
+    This avoids re-downloading files you already have.
+    """
+    if not os.path.isdir(PDF_DIR):
+        print(f"Error: The directory '{PDF_DIR}' was not found.", file=sys.stderr)
+        print("Please make sure you have your result PDFs stored there.", file=sys.stderr)
+        return
 
-def main():
-    pdf_dir = os.path.join(os.path.dirname(__file__), '..', 'data', 'pdfs')
+    pdf_files = [f for f in os.listdir(PDF_DIR) if f.endswith('.pdf')]
+    if not pdf_files:
+        print(f"No PDF files found in '{PDF_DIR}'.", file=sys.stderr)
+        return
+
+    print(f"Found {len(pdf_files)} PDF files to process.")
     
-    if not os.path.exists(pdf_dir):
-        print(f"PDF directory not found: {pdf_dir}")
-        sys.exit(1)
-    
-    pdfs = [f for f in os.listdir(pdf_dir) if f.endswith('.pdf')]
-    print(f"Found {len(pdfs)} PDFs to process")
-    
-    conn = init_db()
-    
-    success = 0
-    failed = 0
-    
-    for i, pdf_name in enumerate(pdfs, 1):
-        pdf_path = os.path.join(pdf_dir, pdf_name)
+    total_success = 0
+    for filename in pdf_files:
+        filepath = os.path.join(PDF_DIR, filename)
         
-        # Extract exam_id from filename (format: roll_examid.pdf)
-        # e.g., 1202425010002_280.pdf -> exam_id = 280
-        exam_id = 'Unknown'
-        stem = os.path.splitext(pdf_name)[0]
-        if '_' in stem:
-            parts = stem.split('_')
-            if len(parts) >= 2:
-                exam_id = parts[1]
-        
+        # Extracts roll and exam_id from filenames like "219001_280.pdf"
+        match = re.match(r'(\d+)_(\d+)\.pdf', filename)
+        if not match:
+            print(f"\n[SKIP] '{filename}': Could not extract roll/exam ID from filename.", file=sys.stderr)
+            continue
+            
+        roll, exam_id_str = match.groups()
+        print(f"\n--- Processing {filename} (Roll: {roll}, Exam: {exam_id_str}) ---")
+
         try:
-            student_data, subjects_data = parse_pdf(pdf_path)
-            if student_data and student_data['roll']:
-                save_to_db(conn, student_data, subjects_data, exam_id)
-                success += 1
-            else:
-                failed += 1
+            student_data, subjects_data = parse_pdf(filepath)
+
+            if not student_data or not student_data.get('roll'):
+                print("  - [FAIL] Parsing Failed: Could not extract required data from the PDF.", file=sys.stderr)
+                continue
+
+            # For offline processing, the exam name is not known, so we use a placeholder.
+            # The name can be updated later if needed.
+            exam_name = f"Exam {exam_id_str}"
+
+            student_id_db = get_or_create_student_id(
+                student_data['roll'],
+                student_data.get('name'),
+                student_data.get('student_group'),
+                student_data.get('session')
+            )
+            exam_id_db = get_or_create_exam_id(exam_id_str, exam_name)
+            
+            result_data = {
+                'gpa': student_data.get('gpa'),
+                'total_marks': student_data.get('total_marks'),
+                'status': student_data.get('status'),
+                'subjects': subjects_data
+            }
+
+            save_result_and_marks(student_id_db, exam_id_db, result_data)
+            total_success += 1
+            print(f"  - [SUCCESS] Processed and saved data for roll {roll}.")
+
         except Exception as e:
-            print(f"Error processing {pdf_name}: {e}")
-            failed += 1
-        
-        # Progress indicator
-        if i % 20 == 0:
-            print(f"Progress: {i}/{len(pdfs)} ({success} success, {failed} failed)")
-    
-    print(f"\nComplete! Processed {success} PDFs successfully, {failed} failed.")
-    
-    # Summary query
-    cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) as cnt FROM students")
-    print(f"Total students in database: {cursor.fetchone()['cnt']}")
-    
-    cursor.execute("SELECT COUNT(*) as cnt FROM subjects")
-    print(f"Total unique subjects: {cursor.fetchone()['cnt']}")
-    
-    cursor.execute("SELECT COUNT(*) as cnt FROM student_marks")
-    print(f"Total student-subject records: {cursor.fetchone()['cnt']}")
-    
-    conn.close()
+            print(f"  - [ERROR] An unexpected error occurred: {e}", file=sys.stderr)
+
+    print(f"\nBatch processing complete. Successfully processed {total_success}/{len(pdf_files)} files.")
+
 
 if __name__ == "__main__":
-    main()
+    print("Starting batch processing of local PDF files...")
+    print("This will parse existing PDFs and upload the DATA to your Neon database.")
+    
+    # Ensure the database schema is ready
+    init_db()
+    
+    process_local_pdfs()

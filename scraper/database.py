@@ -30,11 +30,14 @@ def init_db():
                 )
             ''')
 
-            # Attempt to add the image_url column if it doesn't exist, for existing tables.
-            try:
+            # Check if image_url column exists before attempting to add it
+            cur.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name='students' AND column_name='image_url';
+            """)
+            if not cur.fetchone():
                 cur.execute('ALTER TABLE students ADD COLUMN image_url TEXT')
-            except psycopg2.errors.DuplicateColumn:
-                pass # Column already exists, do nothing.
 
             cur.execute('''
                 CREATE TABLE IF NOT EXISTS exams (
