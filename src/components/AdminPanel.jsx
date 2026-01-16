@@ -39,7 +39,7 @@ const AdminPanel = () => {
     const fetchLogs = async () => {
         setLoading(true);
         try {
-            const res = await axios.get('http://localhost:8000/admin/logs');
+            const res = await axios.get('/api/admin/logs');
             setLogs(res.data);
         } catch (err) {
             console.error("Failed to fetch logs");
