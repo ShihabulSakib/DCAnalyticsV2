@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { Menu, X, Sun, Moon, BarChart2, Shield } from 'lucide-react';
+import { Menu, X, Sun, Moon, BarChart2, Shield, ArrowRightLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import usePreferences from '../hooks/usePreferences';
 
