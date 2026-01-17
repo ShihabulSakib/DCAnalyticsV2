@@ -1,4 +1,3 @@
-
 /** @type {import('tailwindcss').Config} */
 export default {
     darkMode: 'class',
@@ -9,20 +8,26 @@ export default {
     theme: {
         extend: {
             colors: {
-                dark: {
-                    bg: '#0f172a',
-                    card: '#1e293b',
-                    text: '#f1f5f9'
+                // Dark Mode: refined Zinc palette
+                zinc: {
+                    950: '#09090b', // Background
+                    900: '#18181b', // Surface
+                    800: '#27272a', // Border
                 },
-                light: {
-                    bg: '#f8fafc',
-                    card: '#ffffff',
-                    text: '#0f172a'
+                // Light Mode: Alabaster/Slate
+                slate: {
+                    50: '#f8fafc', // Background
+                },
+                // Accent
+                indigo: {
+                    500: '#6366f1',
+                    600: '#4f46e5',
                 }
             },
             fontFamily: {
                 sans: ['Inter', 'sans-serif'],
                 display: ['Outfit', 'sans-serif'],
+                mono: ['JetBrains Mono', 'Roboto Mono', 'monospace'], // For tabular data
             }
         },
     },

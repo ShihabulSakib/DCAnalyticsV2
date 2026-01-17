@@ -3,3 +3,9 @@ uvicorn
 psycopg2-binary
 python-dotenv
 pydantic
+pdfplumber
+requests
+beautifulsoup4
+pyjwt
+passlib[bcrypt]
+slowapi
