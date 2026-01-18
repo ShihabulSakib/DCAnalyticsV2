@@ -98,9 +98,10 @@ const ResultsView = () => {
                     >
                         Results
                     </button>
+                    {/* Analytics disabled on mobile for now. Remove 'hidden md:inline-block' to enable on all devices. */}
                     <button
                         onClick={() => setViewMode('analytics')}
-                        className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${viewMode === 'analytics' ? 'bg-white dark:bg-zinc-800 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
+                        className={`hidden md:inline-block px-4 py-1.5 rounded-md text-sm font-medium transition-all ${viewMode === 'analytics' ? 'bg-white dark:bg-zinc-800 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
                     >
                         Analytics
                     </button>

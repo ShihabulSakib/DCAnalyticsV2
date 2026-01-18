@@ -159,7 +159,7 @@ def get_student_result(roll: str, request: Request, exam_id: str = None, x_acces
         raise HTTPException(status_code=404, detail="Result not found for this exam")
 
     subjects_query = '''
-        SELECT sub.name as subject_name, sm.grade, sm.grade_point
+        SELECT sub.name as subject_name, sm.grade, sm.gp
         FROM student_marks sm
         JOIN subjects sub ON sm.subject_id = sub.id
         WHERE sm.result_id = %s
@@ -210,12 +210,49 @@ def admin_login(data: AdminLogin):
 def get_admin_dashboard(current_user: str = Depends(get_current_admin)):
     """Protected Admin Route."""
     # Stats logic here
+    total_students = execute_query('SELECT COUNT(*) as count FROM students', fetch="one")['count']
+    total_exams = execute_query('SELECT COUNT(*) as count FROM exams', fetch="one")['count']
+    
+    # Recent 5 logs
+    recent_logs = execute_query('SELECT * FROM access_logs ORDER BY timestamp DESC LIMIT 5', fetch="all")
+
     stats = {
-        "total_students": 1245, # Placeholder: Replace with actual count query
-        "server_status": "Healthy",
+        "total_students": total_students,
+        "total_exams": total_exams
+    }
+    return {
+        "stats": stats,
+        "recent_logs": recent_logs,
         "user": current_user
     }
-    return stats
+
+@app.get("/api/admin/students")
+def get_all_students(current_user: str = Depends(get_current_admin)):
+    """Get all students for admin table."""
+    return execute_query('SELECT * FROM students ORDER BY roll', fetch="all")
+
+@app.delete("/api/admin/students/{roll}")
+def delete_student(roll: str, current_user: str = Depends(get_current_admin)):
+    """Delete a student."""
+    execute_query('DELETE FROM students WHERE roll = %s', (roll,))
+    return {"success": True}
+
+@app.put("/api/admin/students/{roll}")
+def update_student(roll: str, data: dict, current_user: str = Depends(get_current_admin)):
+    """Update student details."""
+    query = '''
+        UPDATE students 
+        SET name = %s, student_group = %s, session = %s, image_url = %s 
+        WHERE roll = %s
+    '''
+    execute_query(query, (
+        data.get('name'), 
+        data.get('group_name'), 
+        data.get('session'), 
+        data.get('photo_url'), 
+        roll
+    ))
+    return {"success": True}
 
 @app.get("/api/merit-list")
 @limiter.limit("60/minute")
@@ -235,7 +272,7 @@ def get_merit_list(
     order = "r.total_marks DESC, r.gpa DESC" if sort_by == "marks" else "r.gpa DESC, r.total_marks DESC"
     
     query = f'''
-        SELECT s.roll, s.name, s.photo_url, r.gpa, r.total_marks, r.status
+        SELECT s.roll, s.name, s.image_url as photo_url, r.gpa, r.total_marks, r.status
         FROM results r
         JOIN students s ON r.student_id = s.id
         WHERE r.exam_id = %s
@@ -269,7 +306,7 @@ def get_analytics(request: Request, exam_id: str = None):
         if latest:
             exam_id = latest['id']
         else:
-            return {"total_students": 0, "subjects": {}, "sections": {}}
+            return {"total_students": 0, "subjects": {}, "sections": {}, "gpa_by_group": {}, "grade_distribution": {}}
 
     # Get subject stats
     subject_query = '''
@@ -313,6 +350,20 @@ def get_analytics(request: Request, exam_id: str = None):
                 sections[sec]['failed'] += 1
             else:
                 sections[sec]['passed'] += 1
+                
+    # GPA by Group
+    group_query = '''
+        SELECT s.student_group as group_name, AVG(r.gpa) as avg_gpa
+        FROM results r
+        JOIN students s ON r.student_id = s.id
+        WHERE r.exam_id = %s
+        GROUP BY s.student_group
+    '''
+    group_data = execute_query(group_query, (exam_id,), fetch="all")
+    gpa_by_group = {row['group_name']: row['avg_gpa'] for row in group_data} if group_data else {}
+
+    # Grade Distribution (Placeholder since grade column is missing in results table)
+    grade_distribution = {}
     
     exam_row = execute_query('SELECT name FROM exams WHERE id = %s', (exam_id,), fetch="one")
     exam_name = exam_row['name'] if exam_row else str(exam_id)
@@ -321,5 +372,7 @@ def get_analytics(request: Request, exam_id: str = None):
         "exam_name": exam_name,
         "total_students": len(results),
         "subjects": stats,
-        "sections": sections
+        "sections": sections,
+        "gpa_by_group": gpa_by_group,
+        "grade_distribution": grade_distribution
     }
