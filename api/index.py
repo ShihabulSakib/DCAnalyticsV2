@@ -216,3 +216,110 @@ def get_admin_dashboard(current_user: str = Depends(get_current_admin)):
         "user": current_user
     }
     return stats
+
+@app.get("/api/merit-list")
+@limiter.limit("60/minute")
+def get_merit_list(
+    request: Request,
+    sort_by: str = Query("gpa", enum=["gpa", "marks"]),
+    section: str = Query("All"),
+    exam_id: str = None
+):
+    """Get merit list for an exam."""
+    if not exam_id:
+        latest = execute_query('SELECT id FROM exams ORDER BY id DESC LIMIT 1', fetch="one")
+        if not latest:
+            return []
+        exam_id = latest['id']
+
+    order = "r.total_marks DESC, r.gpa DESC" if sort_by == "marks" else "r.gpa DESC, r.total_marks DESC"
+    
+    query = f'''
+        SELECT s.roll, s.name, s.photo_url, r.gpa, r.total_marks, r.status
+        FROM results r
+        JOIN students s ON r.student_id = s.id
+        WHERE r.exam_id = %s
+        ORDER BY {order}
+    '''
+    
+    rows = execute_query(query, (exam_id,), fetch="all")
+    
+    if section != "All":
+        rows = [r for r in rows if get_section_from_roll(str(r['roll'])) == section]
+    
+    return [
+        {
+            "position": idx + 1,
+            "roll": row['roll'],
+            "name": row['name'],
+            "photo_url": row['photo_url'],
+            "gpa": row['gpa'],
+            "total_marks": row['total_marks'],
+            "status": row['status'],
+            "section": get_section_from_roll(str(row['roll']))
+        } for idx, row in enumerate(rows)
+    ]
+
+@app.get("/api/analytics")
+@limiter.limit("60/minute")
+def get_analytics(request: Request, exam_id: str = None):
+    """Get analytics for a specific exam."""
+    if not exam_id:
+        latest = execute_query('SELECT id FROM exams ORDER BY id DESC LIMIT 1', fetch="one")
+        if latest:
+            exam_id = latest['id']
+        else:
+            return {"total_students": 0, "subjects": {}, "sections": {}}
+
+    # Get subject stats
+    subject_query = '''
+        SELECT sub.name as subject_name, sm.grade
+        FROM student_marks sm
+        JOIN results r ON sm.result_id = r.id
+        JOIN subjects sub ON sm.subject_id = sub.id
+        WHERE r.exam_id = %s
+    '''
+    subjects_data = execute_query(subject_query, (exam_id,), fetch="all")
+    
+    stats = {}
+    for row in subjects_data:
+        subj, grade = row['subject_name'], row['grade']
+        if subj not in stats:
+            stats[subj] = {'passed': 0, 'failed': 0, 'total': 0, 'a_plus': 0}
+        
+        stats[subj]['total'] += 1
+        if grade == 'F':
+            stats[subj]['failed'] += 1
+        else:
+            stats[subj]['passed'] += 1
+            if grade == 'A+':
+                stats[subj]['a_plus'] += 1
+
+    # Get section stats
+    sec_query = '''
+        SELECT s.roll, r.status, r.gpa 
+        FROM results r
+        JOIN students s ON r.student_id = s.id
+        WHERE r.exam_id = %s
+    '''
+    results = execute_query(sec_query, (exam_id,), fetch="all")
+    
+    sections = {sec: {'passed': 0, 'failed': 0, 'total': 0} for sec in ['A', 'B', 'C', 'D', 'E', 'F']}
+    for r in results:
+        sec = get_section_from_roll(str(r['roll']))
+        if sec in sections:
+            sections[sec]['total'] += 1
+            if r['status'] and r['status'].lower() == 'failed':
+                sections[sec]['failed'] += 1
+            else:
+                sections[sec]['passed'] += 1
+    
+    exam_row = execute_query('SELECT name FROM exams WHERE id = %s', (exam_id,), fetch="one")
+    exam_name = exam_row['name'] if exam_row else str(exam_id)
+    
+    return {
+        "exam_name": exam_name,
+        "total_students": len(results),
+        "subjects": stats,
+        "sections": sections
+    }

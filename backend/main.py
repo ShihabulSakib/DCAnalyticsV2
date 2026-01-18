@@ -156,8 +156,9 @@ def get_analytics(exam_id: str = None):
         if latest:
             exam_id = latest['exam_id']
         else:
-            return {"total_students": 0, "subjects": {}, "sections": {}}
+            return {"total_students": 0, "subjects": {}, "sections": {}, "gpa_by_group": {}, "grade_distribution": {}}
 
+    # 1. Subject Performance
     subject_query = '''
         SELECT sub.name as subject_name, sm.grade
         FROM student_marks sm
@@ -181,6 +182,7 @@ def get_analytics(exam_id: str = None):
             if grade == 'A+':
                 stats[subj]['a_plus'] += 1
 
+    # 2. Section Performance
     sec_query = '''
         SELECT s.roll, r.status, r.gpa 
         FROM results r
@@ -199,6 +201,29 @@ def get_analytics(exam_id: str = None):
             else:
                 sections[sec]['passed'] += 1
     
+    # 3. GPA by Group (New)
+    group_query = '''
+        SELECT s.group_name, AVG(r.gpa) as avg_gpa
+        FROM results r
+        JOIN students s ON r.student_id = s.id
+        WHERE r.exam_id = %s
+        GROUP BY s.group_name
+    '''
+    group_data = execute_query(group_query, (exam_id,), fetch="all")
+    gpa_by_group = {row['group_name']: row['avg_gpa'] for row in group_data} if group_data else {}
+
+    # 4. Overall Grade Distribution (New)
+    # Assuming 'grade' column exists in results table or we derive it from GPA ranges if not.
+    # The schema says 'grade' exists in results.
+    grade_query = '''
+        SELECT grade, COUNT(*) as count
+        FROM results
+        WHERE exam_id = %s
+        GROUP BY grade
+    '''
+    grade_data = execute_query(grade_query, (exam_id,), fetch="all")
+    grade_distribution = {row['grade']: row['count'] for row in grade_data} if grade_data else {}
+
     exam_row = execute_query('SELECT name FROM exams WHERE id = %s', (exam_id,), fetch="one")
     exam_name = exam_row['name'] if exam_row else str(exam_id)
     
@@ -206,7 +231,9 @@ def get_analytics(exam_id: str = None):
         "exam_name": exam_name,
         "total_students": len(results),
         "subjects": stats,
-        "sections": sections
+        "sections": sections,
+        "gpa_by_group": gpa_by_group,
+        "grade_distribution": grade_distribution
     }
 
 @app.get("/merit-list")
@@ -275,11 +302,47 @@ def admin_login(data: AdminLogin):
         return {"success": True, "token": "admin_session_token"} # Use JWT in a real app
     raise HTTPException(status_code=401, detail="Invalid Password")
 
-@app.get("/admin/logs")
-def get_logs(limit: int = 100):
-    """Get access logs."""
-    logs = execute_query('SELECT * FROM access_logs ORDER BY timestamp DESC LIMIT %s', (limit,), fetch="all")
-    return logs
+@app.get("/admin/dashboard")
+def get_admin_dashboard_data(request: Request): # token verification should be middleware in real app
+    # Simple auth check (mock) - relying on frontend sending token in real scenario
+    # In production, use Depends(get_current_admin_user)
+    
+    # Stats
+    total_students = execute_query('SELECT COUNT(*) as count FROM students', fetch="one")['count']
+    total_exams = execute_query('SELECT COUNT(*) as count FROM exams', fetch="one")['count']
+    
+    # Recent 5 logs
+    recent_logs = execute_query('SELECT * FROM access_logs ORDER BY timestamp DESC LIMIT 5', fetch="all")
+
+    return {
+        "stats": {
+            "total_students": total_students,
+            "total_exams": total_exams
+        },
+        "recent_logs": recent_logs
+    }
+
+@app.get("/admin/students")
+def get_all_students():
+    """Get all students for admin table."""
+    return execute_query('SELECT * FROM students ORDER BY roll', fetch="all")
+
+@app.delete("/admin/students/{roll}")
+def delete_student(roll: str):
+    """Delete a student."""
+    execute_query('DELETE FROM students WHERE roll = %s', (roll,))
+    return {"success": True}
+
+@app.put("/admin/students/{roll}")
+def update_student(roll: str, data: dict): # Simplified payload
+    """Update student details."""
+    query = '''
+        UPDATE students 
+        SET name = %s, group_name = %s, session = %s, photo_url = %s 
+        WHERE roll = %s
+    '''
+    execute_query(query, (data.get('name'), data.get('group_name'), data.get('session'), data.get('photo_url'), roll))
+    return {"success": True}
 
 # --- Main execution ---
 if __name__ == "__main__":

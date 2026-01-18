@@ -1,12 +1,16 @@
 
 import React, { useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { GraduationCap, ArrowRight, Lock } from 'lucide-react';
-import { fetchExams, loginUser } from '../api';
+import { loginUser } from '../api';
+import { useAuth } from '../context/AuthContext';
 
-const LoginPage = ({ onLogin }) => {
+const LoginPage = () => {
     const [roll, setRoll] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const navigate = useNavigate();
+    const { login } = useAuth();
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -14,8 +18,14 @@ const LoginPage = ({ onLogin }) => {
         setError('');
 
         try {
-            await loginUser(roll);
-            onLogin(roll); // Set global user state
+            const response = await loginUser(roll);
+            const userData = response.data.student;
+
+            // Set user in auth context
+            login({ ...userData, roll, role: 'student' });
+
+            // Navigate to home
+            navigate('/', { replace: true });
         } catch (err) {
             console.error(err);
             if (err.response && err.response.status === 404) {
@@ -93,8 +103,11 @@ const LoginPage = ({ onLogin }) => {
                 </div>
 
                 {/* Footer */}
-                <div className="px-8 py-4 bg-gray-900/30 border-t border-gray-700/50 text-center">
-                    <p className="text-xs text-gray-500">Dhaka College Result Management System &copy; 2026</p>
+                <div className="px-8 py-4 bg-gray-900/30 border-t border-gray-700/50 flex justify-between items-center text-xs text-gray-500">
+                    <p>Dhaka College Result Management System &copy; 2026</p>
+                    <Link to="/admin/login" className="hover:text-indigo-400 transition-colors flex items-center gap-1">
+                        <Lock className="w-3 h-3" /> Admin
+                    </Link>
                 </div>
             </div>
         </div>

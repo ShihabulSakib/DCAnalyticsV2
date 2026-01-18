@@ -23,7 +23,7 @@ def init_db():
                 CREATE TABLE IF NOT EXISTS students (
                     id SERIAL PRIMARY KEY,
                     roll TEXT UNIQUE NOT NULL,
-                    name TEXT,
+                    name TEXT NOT NULL,
                     student_group TEXT,
                     session TEXT,
                     image_url TEXT

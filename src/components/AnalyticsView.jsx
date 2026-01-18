@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Bar, Pie } from 'react-chartjs-2';
 import {
     Chart as ChartJS,
@@ -10,6 +10,7 @@ import {
     Legend,
     ArcElement
 } from 'chart.js';
+import { fetchAnalytics } from '../api';
 
 ChartJS.register(
     CategoryScale,
@@ -21,14 +22,44 @@ ChartJS.register(
     ArcElement
 );
 
-const AnalyticsView = () => {
-    // Dummy Data
+const AnalyticsView = ({ examId }) => {
+    const [data, setData] = useState(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const loadData = async () => {
+            if (!examId) return;
+            try {
+                setLoading(true);
+                const response = await fetchAnalytics(examId);
+                setData(response.data);
+            } catch (err) {
+                console.error(err);
+            } finally {
+                setLoading(false);
+            }
+        };
+        loadData();
+    }, [examId]);
+
+    if (loading || !data) {
+        return (
+            <div className="flex items-center justify-center h-full text-zinc-500 animate-pulse">
+                Loading analytics...
+            </div>
+        );
+    }
+
+    // Process Data for Charts
+    const groupLabels = Object.keys(data.gpa_by_group || {});
+    const groupData = Object.values(data.gpa_by_group || {});
+
     const barData = {
-        labels: ['Science', 'Arts', 'Commerce'],
+        labels: groupLabels.length ? groupLabels : ['No Data'],
         datasets: [
             {
                 label: 'Average GPA',
-                data: [4.5, 3.8, 4.1],
+                data: groupData.length ? groupData : [0],
                 backgroundColor: 'rgba(99, 102, 241, 0.5)', // Indigo-500
                 borderColor: 'rgba(99, 102, 241, 1)',
                 borderWidth: 1,
@@ -36,18 +67,23 @@ const AnalyticsView = () => {
         ],
     };
 
+    const gradeOrder = ['A+', 'A', 'A-', 'B', 'C', 'D', 'F'];
+    const gradeLabels = Object.keys(data.grade_distribution || {}).sort((a, b) => gradeOrder.indexOf(a) - gradeOrder.indexOf(b));
+    const gradeCounts = gradeLabels.map(g => data.grade_distribution[g]);
+
     const pieData = {
-        labels: ['A+', 'A', 'A-', 'B', 'C', 'F'],
+        labels: gradeLabels.length ? gradeLabels : ['No Data'],
         datasets: [
             {
-                data: [120, 150, 80, 40, 20, 10],
+                data: gradeCounts.length ? gradeCounts : [1],
                 backgroundColor: [
-                    '#4ade80', // Green
-                    '#a3e635', // Lime
-                    '#facc15', // Yellow
-                    '#fb923c', // Orange
-                    '#f87171', // Red-400
-                    '#ef4444', // Red-500
+                    '#4ade80', // Green (A+)
+                    '#a3e635', // Lime (A)
+                    '#facc15', // Yellow (A-)
+                    '#fb923c', // Orange (B)
+                    '#f87171', // Red-400 (C)
+                    '#ef4444', // Red-500 (D/F)
+                    '#9ca3af', // Gray (Unknown)
                 ],
                 borderWidth: 0,
             },
@@ -81,12 +117,16 @@ const AnalyticsView = () => {
                 </div>
             </div>
 
-            {/* Additional Placeholder Stats */}
+            {/* Stats Summary */}
             <div className="md:col-span-2 bg-indigo-50 dark:bg-indigo-900/20 p-6 rounded-xl border border-indigo-100 dark:border-indigo-800">
-                <h4 className="font-bold text-indigo-900 dark:text-indigo-200">Insight</h4>
-                <p className="text-indigo-700 dark:text-indigo-300 mt-2">
-                    Science group has improved by 0.5 GPA compared to last semester.
-                </p>
+                <h4 className="font-bold text-indigo-900 dark:text-indigo-200">Exam Summary: {data.exam_name}</h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 text-center">
+                     <div>
+                        <p className="text-xs text-indigo-500 uppercase font-bold">Total Students</p>
+                        <p className="text-2xl font-bold text-indigo-700 dark:text-indigo-300">{data.total_students}</p>
+                     </div>
+                     {/* Add more summary stats if needed */}
+                </div>
             </div>
         </div>
     );

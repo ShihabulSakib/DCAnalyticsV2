@@ -1,19 +1,27 @@
 import React, { useState } from 'react';
-import { Outlet, Link, useLocation } from 'react-router-dom';
-import { Menu, X, Sun, Moon, BarChart2, Shield, ArrowRightLeft } from 'lucide-react';
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import { Menu, X, Sun, Moon, BarChart2, Shield, ArrowRightLeft, LogOut } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import usePreferences from '../hooks/usePreferences';
+import { useAuth } from '../context/AuthContext';
 
 const Layout = () => {
     const { theme, toggleTheme } = usePreferences();
+    const { user, logout } = useAuth();
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const location = useLocation();
+    const navigate = useNavigate();
 
     const navLinks = [
         { path: '/', label: 'Results', icon: BarChart2 },
-        { path: '/compare', label: 'Compare', icon: ArrowRightLeft }, // New
+        { path: '/compare', label: 'Compare', icon: ArrowRightLeft },
         { path: '/admin', label: 'Admin', icon: Shield },
     ];
+
+    const handleLogout = () => {
+        logout();
+        navigate('/login');
+    };
 
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 text-slate-900 dark:text-zinc-100 font-sans transition-colors duration-200">
@@ -46,14 +54,17 @@ const Layout = () => {
                     <button onClick={toggleTheme} className="p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
                         {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
                     </button>
+                    <button onClick={handleLogout} className="flex items-center gap-2 px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors">
+                        <LogOut size={16} />
+                        Logout
+                    </button>
                 </div>
             </nav>
 
-            {/* Mobile Sidebar (Solid - No Glass) */}
+            {/* Mobile Sidebar */}
             <AnimatePresence>
                 {isSidebarOpen && (
                     <>
-                        {/* Backdrop */}
                         <motion.div
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
@@ -62,7 +73,6 @@ const Layout = () => {
                             className="fixed inset-0 z-50 bg-black/50 md:hidden"
                         />
 
-                        {/* Drawer */}
                         <motion.aside
                             initial={{ x: '-100%' }}
                             animate={{ x: 0 }}
@@ -94,8 +104,13 @@ const Layout = () => {
                                 ))}
                             </div>
 
-                            <button onClick={toggleTheme} className="mt-auto flex items-center justify-center gap-2 p-3 rounded-md border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
+                            <button onClick={toggleTheme} className="mb-2 flex items-center justify-center gap-2 p-3 rounded-md border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
                                 {theme === 'dark' ? <><Sun size={20} /> Light Mode</> : <><Moon size={20} /> Dark Mode</>}
+                            </button>
+
+                            <button onClick={handleLogout} className="flex items-center justify-center gap-2 p-3 rounded-md bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors">
+                                <LogOut size={20} />
+                                Logout
                             </button>
                         </motion.aside>
                     </>

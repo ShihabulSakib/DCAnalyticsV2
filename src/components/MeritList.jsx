@@ -1,12 +1,39 @@
-import React from 'react';
+import React, { useRef, useState, useLayoutEffect, useEffect } from 'react';
 import { FixedSizeList as List } from 'react-window';
-import { User } from 'lucide-react';
 
 const MeritList = ({ students, onStudentClick }) => {
+    const containerRef = useRef(null);
+    const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+
+    useLayoutEffect(() => {
+        const updateSize = () => {
+            if (containerRef.current) {
+                setDimensions({
+                    width: containerRef.current.offsetWidth,
+                    height: containerRef.current.offsetHeight
+                });
+            }
+        };
+
+        window.addEventListener('resize', updateSize);
+        updateSize();
+
+        return () => window.removeEventListener('resize', updateSize);
+    }, []);
+
+    // Also update when students change to ensure proper layout if container changes
+    useEffect(() => {
+        if (containerRef.current) {
+             setDimensions({
+                width: containerRef.current.offsetWidth,
+                height: containerRef.current.offsetHeight
+            });
+        }
+    }, [students]);
+
     // Row Component for Virtualized List
     const Row = ({ index, style }) => {
         const student = students[index];
-        // Alternate row colors for readability
         const isEven = index % 2 === 0;
 
         return (
@@ -16,28 +43,19 @@ const MeritList = ({ students, onStudentClick }) => {
                 onClick={() => onStudentClick(student)}
             >
                 {/* Roll */}
-                <div className="w-20 font-mono text-zinc-900 dark:text-zinc-100 font-medium">
+                <div className="w-24 md:w-28 font-mono text-zinc-900 dark:text-zinc-100 font-medium text-sm md:text-base shrink-0">
                     {student.roll}
                 </div>
 
-                {/* Photo & Name */}
-                <div className="flex-1 flex items-center gap-3 min-w-0">
-                    <div className="w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden shrink-0">
-                        {student.photo_url ? (
-                            <img src={student.photo_url} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                            <div className="w-full h-full flex items-center justify-center text-zinc-400">
-                                <User size={14} />
-                            </div>
-                        )}
-                    </div>
-                    <div className="truncate font-medium text-zinc-700 dark:text-zinc-300">
+                {/* Name */}
+                <div className="flex-1 min-w-0 pr-4">
+                    <div className="truncate font-medium text-zinc-700 dark:text-zinc-300 text-sm md:text-base">
                         {student.name}
                     </div>
                 </div>
 
                 {/* GPA */}
-                <div className="w-16 text-right font-mono font-bold text-indigo-600 dark:text-indigo-400">
+                <div className="w-16 text-right font-mono font-bold text-indigo-600 dark:text-indigo-400 text-sm md:text-base shrink-0">
                     {student.gpa || '-'}
                 </div>
             </div>
@@ -48,27 +66,23 @@ const MeritList = ({ students, onStudentClick }) => {
         <div className="w-full h-full bg-white dark:bg-zinc-900 rounded-lg shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden flex flex-col">
             {/* Header */}
             <div className="flex items-center px-4 py-3 bg-zinc-50 dark:bg-zinc-900/80 border-b border-zinc-200 dark:border-zinc-800 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
-                <div className="w-20">Roll</div>
-                <div className="flex-1">Student</div>
-                <div className="w-16 text-right">GPA</div>
+                <div className="w-24 md:w-28 shrink-0">Roll</div>
+                <div className="flex-1">Name</div>
+                <div className="w-16 text-right shrink-0">GPA</div>
             </div>
 
-            {/* Virtualized List */}
-            <div className="flex-1">
-                {/* 
-                   Height is arbitrary here. In a real app, use AutoSizer or calc(). 
-                   Assuming parent container constrains height. 
-                   For now, fixed height fallback or passed via props would be better.
-                   I will use a fixed height for simplicity, or 600px default.
-                */}
-                <List
-                    height={600}
-                    itemCount={students.length}
-                    itemSize={60}
-                    width="100%"
-                >
-                    {Row}
-                </List>
+            {/* Virtualized List Container */}
+            <div className="flex-1 min-h-0" ref={containerRef}>
+                {dimensions.height > 0 && (
+                    <List
+                        height={dimensions.height}
+                        itemCount={students.length}
+                        itemSize={50}
+                        width={dimensions.width}
+                    >
+                        {Row}
+                    </List>
+                )}
             </div>
         </div>
     );

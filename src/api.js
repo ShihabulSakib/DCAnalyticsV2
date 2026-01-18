@@ -18,4 +18,36 @@ export const fetchAnalytics = (examId) => api.get('/analytics', { params: { exam
 export const fetchMeritList = (sortBy = 'gpa', section = 'All', examId) =>
     api.get('/merit-list', { params: { sort_by: sortBy, section, exam_id: examId } });
 
+// Admin API functions
+export const adminLogin = (password) => api.post('/admin/login', { password });
+
+export const getAdminDashboard = () => {
+    const token = localStorage.getItem('token');
+    return api.get('/admin/dashboard', {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+};
+
+export const fetchAllStudents = () => {
+    const token = localStorage.getItem('token');
+    return api.get('/admin/students', {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+};
+
+export const deleteStudent = (roll) => {
+    const token = localStorage.getItem('token');
+    return api.delete(`/admin/students/${roll}`, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+};
+
+export const updateStudent = (roll, data) => {
+    const token = localStorage.getItem('token');
+    return api.put(`/admin/students/${roll}`, data, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+};
+
 export default api;
+

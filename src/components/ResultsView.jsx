@@ -1,28 +1,90 @@
-import React, { useState } from 'react';
-import { Search, Filter } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Search } from 'lucide-react';
 import MeritList from './MeritList';
 import ResultModal from './ResultModal';
 import AnalyticsView from './AnalyticsView';
+import Skeleton from './Skeleton';
+import { fetchExams, fetchMeritList } from '../api';
+import { useAuth } from '../context/AuthContext';
 
 const ResultsView = () => {
-    const [viewMode, setViewMode] = useState('results'); // 'results' | 'analytics'
+    const [viewMode, setViewMode] = useState('results');
     const [selectedStudent, setSelectedStudent] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
+    const [students, setStudents] = useState([]);
+    const [exams, setExams] = useState([]);
+    const [selectedExam, setSelectedExam] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
+    const { user } = useAuth();
 
-    // Dummy Data for now
-    const dummyStudents = Array.from({ length: 1000 }, (_, i) => ({
-        roll: 1000 + i,
-        name: `Student Name ${i + 1}`,
-        gpa: (Math.random() * 2 + 3).toFixed(2),
-        photo_url: null,
-        results: { original_pdf_url: "#" }
-    }));
+    useEffect(() => {
+        loadExams();
+    }, []);
 
-    // Filter Logic
-    const filteredStudents = dummyStudents.filter(s =>
-        s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    const loadExams = async () => {
+        try {
+            const response = await fetchExams();
+            const examsList = response.data;
+            setExams(examsList);
+            if (examsList.length > 0) {
+                // Auto-select the latest exam
+                const latest = examsList[examsList.length - 1];
+                setSelectedExam(latest.id);
+                loadMeritList(latest.id);
+            } else {
+                setLoading(false);
+            }
+        } catch (err) {
+            console.error('Failed to load exams:', err);
+            setError('Failed to load exams. Please check backend connection.');
+            setLoading(false);
+        }
+    };
+
+    const loadMeritList = async (examId) => {
+        setLoading(true);
+        try {
+            const response = await fetchMeritList('gpa', 'All', examId);
+            setStudents(response.data);
+            setError('');
+        } catch (err) {
+            console.error('Failed to load merit list:', err);
+            setError('Failed to load results. Please try again.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const filteredStudents = students.filter(s =>
+        s.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         String(s.roll).includes(searchQuery)
     );
+
+    if (loading) {
+        return (
+            <div className="h-[calc(100vh-6rem)] flex flex-col gap-4">
+                <Skeleton className="h-12 w-full" />
+                <Skeleton className="h-[calc(100vh-12rem)] w-full" />
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="h-[calc(100vh-6rem)] flex items-center justify-center">
+                <div className="text-center">
+                    <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
+                    <button
+                        onClick={loadExams}
+                        className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+                    >
+                        Retry
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="h-[calc(100vh-6rem)] flex flex-col gap-4">
@@ -60,12 +122,18 @@ const ResultsView = () => {
             {/* Content Area */}
             <div className="flex-1 min-h-0 bg-white dark:bg-zinc-900/50 rounded-xl border border-zinc-200 dark:border-zinc-800/50 shadow-sm overflow-hidden">
                 {viewMode === 'results' ? (
-                    <MeritList
-                        students={filteredStudents}
-                        onStudentClick={setSelectedStudent}
-                    />
+                    filteredStudents.length > 0 ? (
+                        <MeritList
+                            students={filteredStudents}
+                            onStudentClick={setSelectedStudent}
+                        />
+                    ) : (
+                        <div className="p-8 text-center text-zinc-500">
+                            No results found. Try adjusting your search.
+                        </div>
+                    )
                 ) : (
-                    <AnalyticsView />
+                    <AnalyticsView examId={selectedExam} />
                 )}
             </div>
 
