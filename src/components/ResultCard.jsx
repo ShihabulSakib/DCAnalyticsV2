@@ -15,10 +15,10 @@ const ResultCard = ({ result, student }) => {
                     <div className="flex flex-col md:flex-row items-center gap-6 relative z-10">
                         <div className="w-24 h-24 rounded-full bg-white/20 backdrop-blur-sm p-1 shadow-lg ring-4 ring-white/10 flex items-center justify-center overflow-hidden relative">
                             <img
-                                src={student.image_url || LinePersonFilled}
+                                src={student.roll ? `/api/student-image/${student.roll}` : LinePersonFilled}
                                 onError={(e) => { e.target.onerror = null; e.target.src = LinePersonFilled; e.target.className = "w-16 h-16 opacity-90 invert p-2"; }}
                                 alt={student.name}
-                                className={student.image_url ? "w-full h-full object-cover rounded-full" : "w-16 h-16 opacity-90 invert p-2"}
+                                className={student.roll ? "w-full h-full object-cover rounded-full" : "w-16 h-16 opacity-90 invert p-2"}
                             />
                         </div>
 

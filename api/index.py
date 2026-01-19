@@ -6,9 +6,11 @@ from psycopg2.extras import RealDictCursor
 from fastapi import FastAPI, HTTPException, Query, Request, Header, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
+from fastapi.responses import Response
 from dotenv import load_dotenv
 from pydantic import BaseModel
 import jwt
+import requests
 from datetime import datetime, timedelta
 from passlib.context import CryptContext
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -34,6 +36,38 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Global pool variable
 pool = None
+
+# --- Remote Image Proxy Session ---
+remote_session = None
+
+def get_remote_session():
+    """Returns a logged-in session for dhakacollege.eshiksabd.com"""
+    global remote_session
+    if remote_session is None:
+        remote_session = requests.Session()
+        remote_session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        })
+    
+    # Check if session is valid by hitting a protected page or just re-login if needed
+    # For simplicity/robustness in this context, we'll try to access. If it fails, we login.
+    # A simple approach is to always try login if we suspect it's dead, or just login once per startup.
+    # Let's try to ensure login.
+    try:
+        # Check a lightweight page or just proceed. 
+        # Ideally, check cookies. For now, let's just attempt login if no cookies.
+        if not remote_session.cookies.get('PHPSESSID'): # Assuming PHPSESSID is used
+            login_url = "https://dhakacollege.eshiksabd.com/Authentication"
+            payload = {
+                'username': 'dcstudent',
+                'password': 'dcstudent',
+                'submit': 'Sign In'
+            }
+            remote_session.post(login_url, data=payload)
+    except Exception as e:
+        print(f"Session init failed: {e}")
+    
+    return remote_session
 
 def get_db_connection():
     """Gets a connection from the pool, creating it if necessary."""
@@ -138,6 +172,44 @@ def get_section_from_roll(roll: str) -> str:
 def get_exams(request: Request):
     """Get list of available exams."""
     return execute_query('SELECT * FROM exams', fetch="all")
+
+@app.get("/api/student-image/{roll}")
+@limiter.limit("120/minute")
+def get_student_image(roll: str, request: Request):
+    """Proxy student image to handle authentication."""
+    student = execute_query('SELECT image_url FROM students WHERE roll = %s', (roll,), fetch="one")
+    
+    if not student or not student['image_url']:
+        # Return a placeholder or 404
+        raise HTTPException(status_code=404, detail="Image not found")
+    
+    image_url = student['image_url']
+    
+    # If it's already a public URL (like Cloudinary), redirect or fetch directly
+    if "eshiksabd.com" not in image_url:
+        return Response(status_code=307, headers={"Location": image_url})
+
+    session = get_remote_session()
+    
+    try:
+        # Attempt fetch
+        resp = session.get(image_url, stream=True, timeout=10)
+        
+        # If 403/401/Login page, try re-login
+        if resp.status_code != 200 or "login" in resp.url.lower():
+            print("Refreshing session for image proxy...")
+            login_url = "https://dhakacollege.eshiksabd.com/Authentication"
+            session.post(login_url, data={'username': 'dcstudent', 'password': 'dcstudent', 'submit': 'Sign In'})
+            resp = session.get(image_url, stream=True, timeout=10)
+            
+        if resp.status_code == 200:
+            return Response(content=resp.content, media_type=resp.headers.get("Content-Type", "image/jpeg"))
+        else:
+            raise HTTPException(status_code=404, detail="Failed to fetch remote image")
+            
+    except Exception as e:
+        print(f"Proxy error: {e}")
+        raise HTTPException(status_code=500, detail="Image proxy error")
 
 @app.get("/api/results/{roll}")
 @limiter.limit("60/minute")

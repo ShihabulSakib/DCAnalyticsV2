@@ -5,6 +5,7 @@ import re
 import logging
 import json
 import os
+from database import get_conn, init_db
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -128,6 +129,7 @@ class ProfileScraper:
             data['name'] = get_label_value("Name :")
             data['group_name'] = get_label_value("Department :")
             data['session'] = get_label_value("Session :")
+            data['academic_year'] = get_label_value("Academic Year :")
             
             # Photo URL extraction
             img_tag = soup.find('img', id='studentImg')
@@ -150,10 +152,17 @@ class ProfileScraper:
                         p2 = cols[1].text.strip()
                         sType = cols[2].text.strip()
                         
-                        if p1 and p1 != '-':
-                             data['subjects'].append({'name': p1, 'type': sType})
-                        if p2 and p2 != '-':
-                             data['subjects'].append({'name': p2, 'type': sType})
+                        # Normalize subjects
+                        for p in [p1, p2]:
+                            if p and p != '-':
+                                name = p
+                                # Logic: Except 'Biology', remove '1st Paper' or '2nd Paper' suffix
+                                if 'Biology' not in name:
+                                    name = re.sub(r' (1st|2nd) Paper$', '', name)
+                                
+                                # Avoid duplicates if both papers normalize to same name (though usually they are distinct rows or cols)
+                                # We'll just add them.
+                                data['subjects'].append({'name': name, 'type': sType})
 
             return data
 
@@ -195,16 +204,49 @@ def save_to_json(data, filename="scraped_profiles.json"):
     except Exception as e:
         logger.error(f"Failed to save JSON: {e}")
 
-# Database Placeholder
-def upsert_student_to_db_placeholder(student_data):
+# Database Upsert Logic
+def upsert_student_to_db(student_data):
     """
-    Placeholder for future database integration.
+    Insert or Update student data in the 'students' table.
     """
-    # TODO: Implement database logic here
-    # from database import upsert_student ...
-    pass
+    if not student_data:
+        return
+    
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute('''
+                INSERT INTO students (roll, name, student_group, session, image_url, academic_year)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (roll) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    student_group = EXCLUDED.student_group,
+                    session = EXCLUDED.session,
+                    image_url = EXCLUDED.image_url,
+                    academic_year = EXCLUDED.academic_year
+            ''', (
+                student_data['roll'],
+                student_data['name'],
+                student_data['group_name'],
+                student_data['session'],
+                student_data['photo_url'],
+                student_data.get('academic_year')
+            ))
+            conn.commit()
+            logger.info(f"Upserted Student to DB: {student_data['roll']} - {student_data['name']}")
+    except Exception as e:
+        logger.error(f"DB Error for {student_data['roll']}: {e}")
+    finally:
+        conn.close()
 
 if __name__ == "__main__":
+    # Ensure database schema is up to date
+    try:
+        init_db()
+        logger.info("Database schema initialized/verified.")
+    except Exception as e:
+        logger.error(f"Failed to initialize database: {e}")
+
     # Hardcoded credentials as requested
     USERNAME = 'dcstudent'
     PASSWORD = 'dcstudent'
@@ -214,17 +256,27 @@ if __name__ == "__main__":
     
     scraper = ProfileScraper(session)
     
-    # Test Roll
-    target_roll = '1202425010471'
-    print(f"Scraping profile for roll {target_roll}...")
-    
-    profile_data = scraper.scrape_student(target_roll)
-    
-    if profile_data:
-        print("\n--- Scraped Data ---")
-        print(json.dumps(profile_data, indent=2))
+    try:
+        start_roll_in = input("Enter Start Roll: ").strip()
+        end_roll_in = input("Enter End Roll: ").strip()
         
-        # Save to JSON
-        save_to_json(profile_data, "profile_data_1202425010471.json")
-    else:
-        print("Failed to scrape data.")
+        start_roll = int(start_roll_in)
+        end_roll = int(end_roll_in)
+        
+        if end_roll < start_roll:
+            print("End roll cannot be smaller than start roll.")
+        else:
+            for r in range(start_roll, end_roll + 1):
+                roll_str = str(r)
+                print(f"Scraping profile for roll {roll_str}...")
+                
+                profile_data = scraper.scrape_student(roll_str)
+                
+                if profile_data:
+                    # Save to Database
+                    upsert_student_to_db(profile_data)
+                else:
+                    print(f"Failed to scrape data for {roll_str}.")
+                    
+    except ValueError:
+        print("Invalid roll number input. Please enter numeric values.")

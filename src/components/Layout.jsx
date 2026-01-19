@@ -7,7 +7,7 @@ import { useAuth } from '../context/AuthContext';
 
 const Layout = () => {
     const { theme, toggleTheme } = usePreferences();
-    const { user, logout } = useAuth();
+    const { user, logout, isAdmin } = useAuth();
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const location = useLocation();
     const navigate = useNavigate();
@@ -15,7 +15,7 @@ const Layout = () => {
     const navLinks = [
         { path: '/', label: 'Results', icon: BarChart2 },
         { path: '/compare', label: 'Compare', icon: ArrowRightLeft },
-        { path: '/admin', label: 'Admin', icon: Shield },
+        ...(isAdmin() ? [{ path: '/admin', label: 'Admin', icon: Shield }] : []),
     ];
 
     const handleLogout = () => {

@@ -42,7 +42,7 @@ const MeritList = ({ students, onStudentClick }) => {
     const Row = ({ index, style }) => {
         const student = students[index];
         const isEven = index % 2 === 0;
-        const rank = index + 1;
+        const rank = student.position; // Use static rank from API
 
         return (
             <div

@@ -39,6 +39,15 @@ def init_db():
             if not cur.fetchone():
                 cur.execute('ALTER TABLE students ADD COLUMN image_url TEXT')
 
+            # Check if academic_year column exists
+            cur.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name='students' AND column_name='academic_year';
+            """)
+            if not cur.fetchone():
+                cur.execute('ALTER TABLE students ADD COLUMN academic_year TEXT')
+
             cur.execute('''
                 CREATE TABLE IF NOT EXISTS exams (
                     id SERIAL PRIMARY KEY,
