@@ -65,11 +65,11 @@ const ResultModal = ({ student, isOpen, onClose }) => {
                                 <div className="flex flex-col items-center mb-6">
                                     <div className="w-24 h-24 rounded-full bg-zinc-100 dark:bg-zinc-800 border-2 border-indigo-100 dark:border-indigo-900 overflow-hidden mb-3">
                                         {roll ? (
-                                            <img 
-                                                src={`/api/student-image/${roll}`} 
+                                            <img
+                                                src={`${import.meta.env.VITE_API_URL || '/api'}/student-image/${roll}`}
                                                 onError={(e) => { e.target.onerror = null; e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
-                                                alt={name} 
-                                                className="w-full h-full object-cover" 
+                                                alt={name}
+                                                className="w-full h-full object-cover"
                                             />
                                         ) : null}
                                         <div className="w-full h-full flex items-center justify-center text-zinc-400" style={{ display: roll ? 'none' : 'flex' }}>
