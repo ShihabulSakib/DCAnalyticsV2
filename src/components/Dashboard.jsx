@@ -141,7 +141,7 @@ function Dashboard({ toggleTheme, isDark, currentUser, onLogout }) {
             <main className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
 
                 {/* Helper/Hero Header */}
-                <div className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                     <div className="flex items-center gap-3">
                         <button
                             onClick={handleReturnToAnalytics}

@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Filter, Menu, X, ArrowDownWideNarrow, Layers, Sparkles } from 'lucide-react';
+import { useOutletContext } from 'react-router-dom';
 import MeritList from './MeritList';
 import ResultModal from './ResultModal';
 import AnalyticsView from './AnalyticsView';
 import Skeleton from './Skeleton';
+import Dropdown from './Dropdown';
 import { fetchExams, fetchMeritList, fetchSessions } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -12,7 +14,6 @@ const parseStudentRoll = (roll) => {
     const rollStr = String(roll);
     if (!roll || rollStr.length < 10) return { session: 'All', group: 'All', section: 'All' };
 
-    // Example: 1 202425 010 471
     const sessionPart = rollStr.substring(1, 7);
     const groupPart = rollStr.substring(7, 10);
 
@@ -41,7 +42,10 @@ const parseStudentRoll = (roll) => {
 
 const ResultsView = () => {
     const { user } = useAuth();
-    const [viewMode, setViewMode] = useState('results'); // 'results' | 'analytics'
+    const outletCtx = useOutletContext();
+    const menuHintDismissed = outletCtx?.menuHintDismissed;
+    
+    const [viewMode, setViewMode] = useState('results'); 
     const [selectedStudent, setSelectedStudent] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
 
@@ -53,7 +57,7 @@ const ResultsView = () => {
     // Filters
     const [selectedSession, setSelectedSession] = useState('All');
     const [selectedGroup, setSelectedGroup] = useState('All');
-    const [sortBy, setSortBy] = useState('gpa'); // 'gpa' or 'marks'
+    const [sortBy, setSortBy] = useState('gpa');
     const [selectedSection, setSelectedSection] = useState('All');
 
     const [loading, setLoading] = useState(true);
@@ -70,11 +74,23 @@ const ResultsView = () => {
             setSelectedGroup(group);
             setSelectedSection(section);
         }
-
-        const timer = setTimeout(() => setShowDiscoveryHint(true), 1000);
         loadData();
-        return () => clearTimeout(timer);
     }, [user]);
+
+    useEffect(() => {
+        if (menuHintDismissed) {
+            const filterSeen = localStorage.getItem('filterHintSeen');
+            if (!filterSeen) {
+                const timer = setTimeout(() => setShowDiscoveryHint(true), 500);
+                return () => clearTimeout(timer);
+            }
+        }
+    }, [menuHintDismissed]);
+
+    const handleDismissFilterHint = () => {
+        setShowDiscoveryHint(false);
+        localStorage.setItem('filterHintSeen', 'true');
+    };
 
     useEffect(() => {
         if (selectedExam) {
@@ -135,123 +151,105 @@ const ResultsView = () => {
         );
     }
 
+    // Transform Data for Dropdowns
+    const examOptions = exams.map(e => ({ value: e.id, label: e.name }));
+    const sortOptions = [
+        { value: 'gpa', label: 'Rank by GPA' },
+        { value: 'marks', label: 'Rank by Marks' }
+    ];
+    const sectionOptions = [
+        { value: 'All', label: 'All Sections' },
+        ...['A', 'B', 'C', 'D', 'E', 'F'].map(s => ({ value: s, label: `Sec ${s}` }))
+    ];
+    const groupOptions = [
+        { value: 'All', label: 'All Groups' },
+        { value: 'Science', label: 'Science' },
+        { value: 'Business Studies', label: 'Business' },
+        { value: 'Humanities', label: 'Humanities' }
+    ];
+
     // Desktop Filter Component
     const DesktopFilters = () => (
         <div className="hidden md:flex flex-wrap items-center gap-2">
-            <select
+            <Dropdown
                 value={selectedExam || ''}
                 onChange={(e) => setSelectedExam(e.target.value)}
-                className="min-w-[140px] px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none"
-            >
-                {exams.map(exam => <option key={exam.id} value={exam.id}>{exam.name}</option>)}
-            </select>
-
-            <select
+                options={examOptions}
+                className="w-48"
+            />
+            <Dropdown
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
-                className="px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none"
-            >
-                <option value="gpa">Rank by GPA</option>
-                <option value="marks">Rank by Marks</option>
-            </select>
-
-            <select
+                options={sortOptions}
+                className="w-40"
+            />
+            <Dropdown
                 value={selectedSection}
                 onChange={(e) => setSelectedSection(e.target.value)}
-                className="px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none"
-            >
-                <option value="All">All Sections</option>
-                {['A', 'B', 'C', 'D', 'E', 'F'].map(sec => <option key={sec} value={sec}>Sec {sec}</option>)}
-            </select>
-
-            <select
+                options={sectionOptions}
+                className="w-36"
+            />
+            <Dropdown
                 value={selectedGroup}
                 onChange={(e) => setSelectedGroup(e.target.value)}
-                className="px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none"
-            >
-                <option value="All">All Groups</option>
-                <option value="Science">Science</option>
-                <option value="Business Studies">Business</option>
-                <option value="Humanities">Humanities</option>
-            </select>
+                options={groupOptions}
+                className="w-40"
+            />
         </div>
     );
 
     return (
-        <div className="h-[calc(100vh-6rem)] flex flex-col gap-4 relative">
-            {/* ... Discovery Hint ... */}
-            <AnimatePresence>
-                {showDiscoveryHint && (
-                    <motion.div
-                        initial={{ opacity: 0, y: -10, x: 20 }}
-                        animate={{ opacity: 1, y: 0, x: 0 }}
-                        exit={{ opacity: 0, scale: 0.9 }}
-                        className="md:hidden absolute top-12 right-2 z-50 w-[250px]"
-                    >
-                        <div className="relative bg-indigo-600 text-white text-xs p-3 rounded-lg shadow-xl border border-indigo-400/30">
-                            <button onClick={() => setShowDiscoveryHint(false)} className="absolute top-1 right-1 text-indigo-200 hover:text-white"><X size={12} /></button>
-                            <div className="flex gap-2">
-                                <Sparkles className="w-4 h-4 text-yellow-300 shrink-0 mt-0.5" />
-                                <div>
-                                    <p className="font-bold mb-1">Explore & Filter</p>
-                                    <p className="leading-relaxed opacity-90">Tap filters to sort by marks, check sections, and more!</p>
-                                </div>
-                            </div>
-                            <div className="absolute -top-1.5 right-6 w-3 h-3 bg-indigo-600 rotate-45"></div>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
-            {/* Header: Tabs + Search + Desktop Filters + Mobile Filter Button */}
-            <div className="flex flex-col gap-3">
-                <div className="flex gap-3 items-center justify-between">
+        <div className="h-[calc(100vh-5rem)] flex flex-col gap-2 pt-2 pb-4">
+            {/* Controls Header */}
+            <div className="flex flex-col md:flex-row gap-3 justify-between items-start md:items-center">
                     {/* Tabs */}
-                    <div className="flex bg-zinc-100 dark:bg-zinc-900 p-1 rounded-lg border border-zinc-200 dark:border-zinc-800 shrink-0">
+                    <div className="flex bg-zinc-100 dark:bg-zinc-900 p-1 rounded-lg border border-zinc-200 dark:border-zinc-800 shrink-0 self-start">
                         <button
                             onClick={() => setViewMode('results')}
                             className={`px-3 md:px-4 py-1.5 rounded-md text-sm font-medium transition-all ${viewMode === 'results' ? 'bg-white dark:bg-zinc-800 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
                         >
                             Results
                         </button>
+                        {/* Analytics disabled on mobile for now. Remove 'hidden md:inline-block' to enable on all devices. */}
                         <button
                             onClick={() => setViewMode('analytics')}
-                            className={`px-3 md:px-4 py-1.5 rounded-md text-sm font-medium transition-all ${viewMode === 'analytics' ? 'bg-white dark:bg-zinc-800 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
+                            className={`hidden md:inline-block px-3 md:px-4 py-1.5 rounded-md text-sm font-medium transition-all ${viewMode === 'analytics' ? 'bg-white dark:bg-zinc-800 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
                         >
                             Analytics
                         </button>
                     </div>
 
-                    {/* Search Bar */}
-                    <div className="relative flex-1 max-w-md">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
-                        <input
-                            type="text"
-                            placeholder="Search..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="w-full pl-9 pr-4 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm shadow-sm"
-                        />
+                    {/* Search Bar & Mobile Filter */}
+                    <div className="flex gap-2 w-full md:w-auto md:flex-1 md:max-w-md">
+                        <div className="relative flex-1">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+                            <input
+                                type="text"
+                                placeholder="Search..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="w-full pl-9 pr-4 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm shadow-sm"
+                            />
+                        </div>
+
+                        {/* Mobile Filter Button */}
+                        <button
+                            onClick={() => {
+                                setIsMenuOpen(true);
+                                handleDismissFilterHint();
+                            }}
+                            className="md:hidden flex items-center gap-2 p-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors shadow-sm relative shrink-0"
+                        >
+                            <Filter size={20} />
+                            {(selectedSession !== 'All' || selectedGroup !== 'All' || selectedSection !== 'All') && (
+                                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-indigo-500 rounded-full border-2 border-white dark:border-zinc-900"></span>
+                            )}
+                        </button>
                     </div>
 
-                    {/* Mobile Filter Button (Visible only on mobile) */}
-                    <button
-                        onClick={() => {
-                            setIsMenuOpen(true);
-                            setShowDiscoveryHint(false);
-                        }}
-                        className="md:hidden flex items-center gap-2 p-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors shadow-sm relative shrink-0"
-                    >
-                        <Filter size={20} />
-                        {(selectedSession !== 'All' || selectedGroup !== 'All' || selectedSection !== 'All') && (
-                            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-indigo-500 rounded-full border-2 border-white dark:border-zinc-900"></span>
-                        )}
-                    </button>
+                    {/* Desktop Filters (Visible only on Desktop) */}
+                    <DesktopFilters />
                 </div>
-
-                {/* Desktop Filters (Visible only on Desktop) */}
-                <DesktopFilters />
-            </div>
 
             {/* Mobile Filter Modal (Same as before) */}
             <AnimatePresence>

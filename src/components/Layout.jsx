@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { Menu, X, Sun, Moon, BarChart2, Shield, ArrowRightLeft, LogOut } from 'lucide-react';
+import { Menu, X, Sun, Moon, BarChart2, Shield, ArrowRightLeft, LogOut, Sparkles, GraduationCap } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import usePreferences from '../hooks/usePreferences';
 import { useAuth } from '../context/AuthContext';
@@ -9,8 +9,27 @@ const Layout = () => {
     const { theme, toggleTheme } = usePreferences();
     const { user, logout, isAdmin } = useAuth();
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const [showMenuHint, setShowMenuHint] = useState(false);
+    const [menuHintDismissed, setMenuHintDismissed] = useState(false);
     const location = useLocation();
     const navigate = useNavigate();
+
+    useEffect(() => {
+        // Show hint only if not seen before
+        const seen = localStorage.getItem('menuHintSeen');
+        if (!seen) {
+            const timer = setTimeout(() => setShowMenuHint(true), 1000);
+            return () => clearTimeout(timer);
+        } else {
+            setMenuHintDismissed(true);
+        }
+    }, []);
+
+    const handleDismissMenuHint = () => {
+        setShowMenuHint(false);
+        localStorage.setItem('menuHintSeen', 'true');
+        setMenuHintDismissed(true);
+    };
 
     const navLinks = [
         { path: '/', label: 'Results', icon: BarChart2 },
@@ -26,15 +45,40 @@ const Layout = () => {
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 text-slate-900 dark:text-zinc-100 font-sans transition-colors duration-200">
             {/* Sticky Smart Navbar (Minimal Glass) */}
-            <nav className="fixed top-0 left-0 right-0 z-50 h-16 border-b border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/70 backdrop-blur-sm flex items-center justify-between px-4 md:px-8">
+            <nav className="fixed top-0 left-0 right-0 z-50 h-16 border-b border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/70 backdrop-blur-sm flex items-center justify-between px-4 md:px-8 relative">
                 <div className="flex items-center gap-2">
                     <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md">
                         <Menu size={24} />
                     </button>
-                    <Link to="/" className="text-xl font-display font-bold tracking-tight text-indigo-600 dark:text-indigo-400">
+                    <Link to="/" className="flex items-center gap-2 text-xl font-display font-bold tracking-tight text-indigo-600 dark:text-indigo-400">
+                        <GraduationCap className="hidden md:block" size={28} />
                         DCAnalytics
                     </Link>
                 </div>
+
+                {/* Menu Hint Popup */}
+                <AnimatePresence>
+                    {showMenuHint && (
+                        <motion.div
+                            initial={{ opacity: 0, y: 10, x: -10 }}
+                            animate={{ opacity: 1, y: 0, x: 0 }}
+                            exit={{ opacity: 0, scale: 0.9 }}
+                            className="md:hidden absolute top-16 left-4 z-50 w-[260px]"
+                        >
+                            <div className="relative bg-indigo-600 text-white text-xs p-3 rounded-lg shadow-xl border border-indigo-400/30">
+                                <button onClick={handleDismissMenuHint} className="absolute top-1 right-1 text-indigo-200 hover:text-white"><X size={12} /></button>
+                                <div className="flex gap-2">
+                                    <Sparkles className="w-4 h-4 text-yellow-300 shrink-0 mt-0.5" />
+                                    <div>
+                                        <p className="font-bold mb-1">Navigation & Compare</p>
+                                        <p className="leading-relaxed opacity-90">Tap here to access Comparison Mode, Admin Panel, and Settings.</p>
+                                    </div>
+                                </div>
+                                <div className="absolute -top-1.5 left-4 w-3 h-3 bg-indigo-600 rotate-45"></div>
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
 
                 {/* Desktop Menu */}
                 <div className="hidden md:flex items-center gap-6">
@@ -59,10 +103,16 @@ const Layout = () => {
                         Logout
                     </button>
                 </div>
+
+                {/* Mobile Right Logo */}
+                <div className="md:hidden">
+                    <GraduationCap className="text-indigo-600 dark:text-indigo-400" size={28} />
+                </div>
             </nav>
 
             {/* Mobile Sidebar */}
             <AnimatePresence>
+                {/* ... (no changes here) ... */}
                 {isSidebarOpen && (
                     <>
                         <motion.div
@@ -118,8 +168,8 @@ const Layout = () => {
             </AnimatePresence>
 
             {/* Main Content */}
-            <main className="pt-20 px-4 md:px-8 max-w-7xl mx-auto">
-                <Outlet context={{ theme }} />
+            <main className="pt-[16px] px-4 md:px-8 max-w-7xl mx-auto">
+                <Outlet context={{ theme, menuHintDismissed }} />
             </main>
         </div>
     );

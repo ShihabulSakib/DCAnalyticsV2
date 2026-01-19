@@ -87,8 +87,8 @@ const ResultModal = ({ student, isOpen, onClose }) => {
                                 ) : (
                                     <>
                                         {/* Marks Table */}
-                                        <div className="mb-6 border rounded-lg border-zinc-200 dark:border-zinc-800 overflow-hidden">
-                                            <table className="w-full text-sm text-left">
+                                        <div className="mb-6 border rounded-lg border-zinc-200 dark:border-zinc-800 overflow-hidden overflow-x-auto">
+                                            <table className="w-full text-sm text-left min-w-[300px]">
                                                 <thead className="bg-zinc-50 dark:bg-zinc-800/50 text-zinc-500 dark:text-zinc-400 font-medium border-b border-zinc-200 dark:border-zinc-800">
                                                     <tr>
                                                         <th className="px-4 py-2">Subject</th>

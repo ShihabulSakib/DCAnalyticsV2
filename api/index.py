@@ -350,9 +350,8 @@ def get_merit_list(
             return []
         exam_id = latest['id']
 
-    order = "r.total_marks DESC, r.gpa DESC" if sort_by == "marks" else "r.gpa DESC, r.total_marks DESC"
+    order = "r.total_marks DESC NULLS LAST, r.gpa DESC NULLS LAST" if sort_by == "marks" else "r.gpa DESC NULLS LAST, r.total_marks DESC NULLS LAST"
     
-    # Base query
     query = f'''
         SELECT s.roll, s.name, s.image_url as photo_url, r.gpa, r.total_marks, r.status
         FROM results r

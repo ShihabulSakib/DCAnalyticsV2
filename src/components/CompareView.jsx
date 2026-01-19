@@ -127,6 +127,15 @@ const CompareView = () => {
         return subject ? subject.total : 0;
     }) : [];
 
+    // Dynamic Scale Calculation
+    const allMarks = [
+        ...(studentA?.marks || []),
+        ...(studentB ? studentBmarks : [])
+    ];
+    const maxMark = Math.max(...allMarks, 0);
+    // If maxMark is low (e.g. 15), scale to 20. If 80, scale to 100.
+    const chartMax = maxMark > 0 ? Math.ceil(maxMark * 1.1) : 100;
+
     const data = {
         labels: labels,
         datasets: [
@@ -136,6 +145,7 @@ const CompareView = () => {
                 backgroundColor: 'rgba(99, 102, 241, 0.2)',
                 borderColor: '#6366f1',
                 borderWidth: 2,
+                pointBackgroundColor: '#6366f1',
             },
             studentB && {
                 label: studentB.name,
@@ -143,8 +153,29 @@ const CompareView = () => {
                 backgroundColor: 'rgba(239, 68, 68, 0.2)',
                 borderColor: '#ef4444',
                 borderWidth: 2,
+                pointBackgroundColor: '#ef4444',
             }
         ].filter(Boolean),
+    };
+
+    const chartOptions = {
+        maintainAspectRatio: false,
+        scales: {
+            r: {
+                min: 0,
+                max: chartMax,
+                ticks: { display: false },
+                pointLabels: {
+                    font: { size: 12, weight: 'bold' },
+                    color: '#6b7280' // zinc-500
+                },
+                grid: { color: 'rgba(0, 0, 0, 0.05)' },
+                angleLines: { color: 'rgba(0, 0, 0, 0.05)' }
+            }
+        },
+        plugins: {
+            legend: { position: 'bottom', labels: { usePointStyle: true, padding: 20 } }
+        }
     };
 
     if (loading && !exams.length) {
@@ -224,31 +255,9 @@ const CompareView = () => {
 
             <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-6 min-h-0">
                 {/* Radar Chart - Scaled Up */}
-                <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col">
-                    <h3 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-4 pl-2">Performance Web</h3>
-                    <div className="flex-1 flex items-center justify-center min-h-[400px]">
-                        {/* Increased min-height and removed constraints for bigger spread */}
-                        <div className="w-full h-full">
-                            <Radar
-                                data={data}
-                                options={{
-                                    maintainAspectRatio: false,
-                                    scales: {
-                                        r: {
-                                            min: 0,
-                                            max: 100,
-                                            ticks: { display: false, stepSize: 20 },
-                                            pointLabels: {
-                                                font: { size: 12, weight: 'bold' }
-                                            }
-                                        }
-                                    },
-                                    plugins: {
-                                        legend: { position: 'bottom', labels: { boxWidth: 10, usePointStyle: true } }
-                                    }
-                                }}
-                            />
-                        </div>
+                <div className="bg-white dark:bg-zinc-900 p-4 md:p-6 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col items-center justify-center relative overflow-hidden">
+                    <div className="w-full aspect-square md:h-full md:max-h-[500px]">
+                        <Radar data={data} options={chartOptions} />
                     </div>
                 </div>
 
@@ -291,5 +300,4 @@ const CompareView = () => {
         </div>
     );
 };
-
 export default CompareView;

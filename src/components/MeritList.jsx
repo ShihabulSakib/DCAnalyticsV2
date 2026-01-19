@@ -57,14 +57,13 @@ const MeritList = ({ students, onStudentClick }) => {
                     {getRankIcon(rank)}
                 </div>
 
-                {/* Roll */}
-                <div className="w-28 md:w-32 font-mono text-zinc-900 dark:text-zinc-100 font-medium text-sm md:text-base shrink-0 text-center">
-                    <span className="md:hidden">...{String(student.roll).slice(-3)}</span>
-                    <span className="hidden md:block">{student.roll}</span>
+                {/* Roll (Last 3 digits) */}
+                <div className="w-16 md:w-20 font-mono text-zinc-500 dark:text-zinc-400 font-medium text-sm md:text-base shrink-0 text-center">
+                    {String(student.roll).slice(-3)}
                 </div>
 
                 {/* Name */}
-                <div className="flex-1 min-w-0 px-4">
+                <div className="flex-1 min-w-0 px-3">
                     <div className="truncate font-medium text-zinc-700 dark:text-zinc-300 text-sm md:text-base">
                         {student.name}
                     </div>
@@ -83,8 +82,8 @@ const MeritList = ({ students, onStudentClick }) => {
             {/* Header */}
             <div className="flex items-center px-4 py-3 bg-zinc-50 dark:bg-zinc-900/80 border-b border-zinc-200 dark:border-zinc-800 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
                 <div className="w-12 md:w-16 text-center shrink-0">Rank</div>
-                <div className="w-28 md:w-32 text-center shrink-0">Roll</div>
-                <div className="flex-1 px-4">Name</div>
+                <div className="w-16 md:w-20 text-center shrink-0">Roll</div>
+                <div className="flex-1 px-3">Name</div>
                 <div className="w-16 text-right shrink-0">GPA</div>
             </div>
 
