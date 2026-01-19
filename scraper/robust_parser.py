@@ -171,6 +171,18 @@ def parse_pdf(pdf_path):
             page = pdf.pages[0]
             text = page.extract_text() or ""
             
+            # Exam Name Extraction
+            lines = text.split('\n')
+            for line in lines[:10]:
+                if re.search(r"Exam|Test|Examination|Assessment", line, re.IGNORECASE) and len(line.strip()) > 5:
+                    # Clean up: Remove 'Dhaka College' if present in the same line
+                    clean_line = re.sub(r"Dhaka\s+College", "", line, flags=re.IGNORECASE).strip()
+                    # Remove common prefixes like "Result of"
+                    clean_line = re.sub(r"^Result\s+of\s*", "", clean_line, flags=re.IGNORECASE).strip()
+                    if clean_line:
+                        student_data['exam_name'] = clean_line
+                        break
+            
             roll_match = re.search(r"(?:Class\s+Roll|Roll|\u09b0\u09cb\u09b2)\s*[:\-]?\s*(\d{10,})", text, re.IGNORECASE)
             if roll_match:
                 student_data['roll'] = roll_match.group(1).strip()

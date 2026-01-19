@@ -92,6 +92,7 @@ const ResultModal = ({ student, isOpen, onClose }) => {
                                                 <thead className="bg-zinc-50 dark:bg-zinc-800/50 text-zinc-500 dark:text-zinc-400 font-medium border-b border-zinc-200 dark:border-zinc-800">
                                                     <tr>
                                                         <th className="px-4 py-2">Subject</th>
+                                                        <th className="px-4 py-2 text-right">Marks</th>
                                                         <th className="px-4 py-2 text-right">Grade</th>
                                                         <th className="px-4 py-2 text-right">GPA</th>
                                                     </tr>
@@ -99,15 +100,16 @@ const ResultModal = ({ student, isOpen, onClose }) => {
                                                 <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
                                                     {marks.length > 0 ? (
                                                         marks.map((mark, idx) => (
-                                                            <tr key={idx} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/30">
+                                                            <tr key={idx} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors">
                                                                 <td className="px-4 py-2 text-zinc-800 dark:text-zinc-200">{mark.subject_name}</td>
+                                                                <td className="px-4 py-2 text-right font-mono text-zinc-600 dark:text-zinc-300 font-medium">{mark.total !== null ? mark.total : '-'}</td>
                                                                 <td className="px-4 py-2 text-right font-mono text-zinc-600 dark:text-zinc-300">{mark.grade}</td>
-                                                                <td className="px-4 py-2 text-right font-mono text-zinc-600 dark:text-zinc-300">{mark.gp}</td>
+                                                                <td className="px-4 py-2 text-right font-mono text-indigo-600 dark:text-indigo-400 font-bold">{mark.gp}</td>
                                                             </tr>
                                                         ))
                                                     ) : (
                                                         <tr>
-                                                            <td colSpan="3" className="px-4 py-4 text-center text-zinc-400">No detailed marks available</td>
+                                                            <td colSpan="4" className="px-4 py-4 text-center text-zinc-400">No detailed marks available</td>
                                                         </tr>
                                                     )}
                                                 </tbody>

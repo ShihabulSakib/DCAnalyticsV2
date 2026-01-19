@@ -167,6 +167,13 @@ def get_section_from_roll(roll: str) -> str:
 
 # --- API Endpoints ---
 
+@app.get("/api/sessions")
+@limiter.limit("60/minute")
+def get_sessions(request: Request):
+    """Get list of available sessions."""
+    rows = execute_query('SELECT DISTINCT session FROM students WHERE session IS NOT NULL ORDER BY session DESC', fetch="all")
+    return [r['session'] for r in rows]
+
 @app.get("/api/exams")
 @limiter.limit("60/minute")
 def get_exams(request: Request):
@@ -231,7 +238,7 @@ def get_student_result(roll: str, request: Request, exam_id: str = None, x_acces
         raise HTTPException(status_code=404, detail="Result not found for this exam")
 
     subjects_query = '''
-        SELECT sub.name as subject_name, sm.grade, sm.gp
+        SELECT sub.name as subject_name, sm.grade, sm.gp, sm.total
         FROM student_marks sm
         JOIN subjects sub ON sm.subject_id = sub.id
         WHERE sm.result_id = %s
@@ -332,9 +339,11 @@ def get_merit_list(
     request: Request,
     sort_by: str = Query("gpa", enum=["gpa", "marks"]),
     section: str = Query("All"),
-    exam_id: str = None
+    exam_id: str = None,
+    session: str = Query(None),
+    group: str = Query(None)
 ):
-    """Get merit list for an exam."""
+    """Get merit list for an exam with filtering."""
     if not exam_id:
         latest = execute_query('SELECT id FROM exams ORDER BY id DESC LIMIT 1', fetch="one")
         if not latest:
@@ -343,15 +352,27 @@ def get_merit_list(
 
     order = "r.total_marks DESC, r.gpa DESC" if sort_by == "marks" else "r.gpa DESC, r.total_marks DESC"
     
+    # Base query
     query = f'''
         SELECT s.roll, s.name, s.image_url as photo_url, r.gpa, r.total_marks, r.status
         FROM results r
         JOIN students s ON r.student_id = s.id
         WHERE r.exam_id = %s
-        ORDER BY {order}
     '''
+    params = [exam_id]
+
+    # Dynamic Filtering
+    if session and session != "All":
+        query += " AND s.session = %s"
+        params.append(session)
     
-    rows = execute_query(query, (exam_id,), fetch="all")
+    if group and group != "All":
+        query += " AND s.student_group = %s"
+        params.append(group)
+
+    query += f" ORDER BY {order}"
+    
+    rows = execute_query(query, tuple(params), fetch="all")
     
     if section != "All":
         rows = [r for r in rows if get_section_from_roll(str(r['roll'])) == section]

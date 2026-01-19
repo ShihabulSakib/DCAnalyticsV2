@@ -12,18 +12,18 @@ export const useAuth = () => {
 };
 
 export const AuthProvider = ({ children }) => {
-    const [user, setUser] = useState(null);
-    const [loading, setLoading] = useState(true);
-
-    useEffect(() => {
-        // Check for stored user on mount
-        const storedUser = localStorage.getItem('user');
-        const storedToken = localStorage.getItem('token');
-        if (storedUser && storedToken) {
-            setUser(JSON.parse(storedUser));
+    const [user, setUser] = useState(() => {
+        try {
+            const storedUser = localStorage.getItem('user');
+            // For admin we need token, but for students (roll-based) we might not have one.
+            // We just check if user exists.
+            return storedUser ? JSON.parse(storedUser) : null;
+        } catch (error) {
+            console.error("Failed to parse user from local storage", error);
+            return null;
         }
-        setLoading(false);
-    }, []);
+    });
+    const [loading, setLoading] = useState(false); // No initial loading needed with lazy init
 
     const login = (userData, token = null) => {
         setUser(userData);

@@ -58,8 +58,9 @@ const MeritList = ({ students, onStudentClick }) => {
                 </div>
 
                 {/* Roll */}
-                <div className="w-28 md:w-32 font-mono text-zinc-900 dark:text-zinc-100 font-medium text-sm md:text-base shrink-0 truncate text-center">
-                    {student.roll}
+                <div className="w-28 md:w-32 font-mono text-zinc-900 dark:text-zinc-100 font-medium text-sm md:text-base shrink-0 text-center">
+                    <span className="md:hidden">...{String(student.roll).slice(-3)}</span>
+                    <span className="hidden md:block">{student.roll}</span>
                 </div>
 
                 {/* Name */}

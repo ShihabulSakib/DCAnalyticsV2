@@ -6,6 +6,7 @@ const api = axios.create({
 });
 
 export const fetchExams = () => api.get('/exams');
+export const fetchSessions = () => api.get('/sessions');
 export const loginUser = (roll) => api.post('/login', { roll });
 export const fetchResult = (roll, examId, accessorRoll = null) => {
     const config = { params: { exam_id: examId } };
@@ -15,8 +16,8 @@ export const fetchResult = (roll, examId, accessorRoll = null) => {
     return api.get(`/results/${roll}`, config);
 };
 export const fetchAnalytics = (examId) => api.get('/analytics', { params: { exam_id: examId } });
-export const fetchMeritList = (sortBy = 'gpa', section = 'All', examId) =>
-    api.get('/merit-list', { params: { sort_by: sortBy, section, exam_id: examId } });
+export const fetchMeritList = (sortBy = 'gpa', section = 'All', examId, session = null, group = null) =>
+    api.get('/merit-list', { params: { sort_by: sortBy, section, exam_id: examId, session, group } });
 
 // Admin API functions
 export const adminLogin = (password) => api.post('/admin/login', { password });

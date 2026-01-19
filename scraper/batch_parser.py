@@ -24,29 +24,30 @@ def process_local_pdfs():
 
     print(f"Found {len(pdf_files)} PDF files to process.")
     
+    # User Request: Ask for Exam Details ONCE
+    custom_exam_name = input("\nEnter the Exam Name for this batch (e.g., 'HSC 2024 Test'): ").strip()
+    custom_exam_id = input("Enter the Exam ID (e.g., '280'): ").strip()
+
+    if not custom_exam_name or not custom_exam_id:
+        print("Both Exam Name and Exam ID are required! Exiting.", file=sys.stderr)
+        return
+
     total_success = 0
     for filename in pdf_files:
         filepath = os.path.join(PDF_DIR, filename)
         
-        # Extracts roll and exam_id from filenames like "219001_280.pdf"
-        match = re.match(r'(\d+)_(\d+)\.pdf', filename)
-        if not match:
-            print(f"\n[SKIP] '{filename}': Could not extract roll/exam ID from filename.", file=sys.stderr)
-            continue
-            
-        roll, exam_id_str = match.groups()
-        print(f"\n--- Processing {filename} (Roll: {roll}, Exam: {exam_id_str}) ---")
+        print(f"\n--- Processing {filename} ---")
 
         try:
             student_data, subjects_data = parse_pdf(filepath)
 
             if not student_data or not student_data.get('roll'):
-                print("  - [FAIL] Parsing Failed: Could not extract required data from the PDF.", file=sys.stderr)
+                print("  - [FAIL] Parsing Failed: Could not extract Student Roll from the PDF content.", file=sys.stderr)
                 continue
 
-            # For offline processing, the exam name is not known, so we use a placeholder.
-            # The name can be updated later if needed.
-            exam_name = f"Exam {exam_id_str}"
+            # Use the single custom exam details for all files
+            exam_name = custom_exam_name
+            exam_id_str = custom_exam_id
 
             student_id_db = get_or_create_student_id(
                 student_data['roll'],
