@@ -41,32 +41,16 @@ pool = None
 remote_session = None
 
 def get_remote_session():
-    """Returns a logged-in session for dhakacollege.eshiksabd.com"""
+    """Returns a session for dhakacollege.eshiksabd.com. 
+    On Vercel, this will likely be new for every request, so we keep it lightweight.
+    """
+
     global remote_session
     if remote_session is None:
         remote_session = requests.Session()
         remote_session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         })
-    
-    # Check if session is valid by hitting a protected page or just re-login if needed
-    # For simplicity/robustness in this context, we'll try to access. If it fails, we login.
-    # A simple approach is to always try login if we suspect it's dead, or just login once per startup.
-    # Let's try to ensure login.
-    try:
-        # Check a lightweight page or just proceed. 
-        # Ideally, check cookies. For now, let's just attempt login if no cookies.
-        if not remote_session.cookies.get('PHPSESSID'): # Assuming PHPSESSID is used
-            login_url = "https://dhakacollege.eshiksabd.com/Authentication"
-            payload = {
-                'username': 'dcstudent',
-                'password': 'dcstudent',
-                'submit': 'Sign In'
-            }
-            remote_session.post(login_url, data=payload)
-    except Exception as e:
-        print(f"Session init failed: {e}")
-    
     return remote_session
 
 def get_db_connection():
@@ -74,7 +58,8 @@ def get_db_connection():
     global pool
     if pool is None:
         try:
-            pool = SimpleConnectionPool(minconn=1, maxconn=5, dsn=DATABASE_URL)
+            # For Vercel/Serverless + Neon: Keep pool small (1 connection) to avoid "too many connections"
+            pool = SimpleConnectionPool(minconn=1, maxconn=1, dsn=DATABASE_URL)
         except Exception as e:
             print(f"Failed to create connection pool: {e}")
             raise e
@@ -104,6 +89,7 @@ def execute_query(query, params=None, fetch=None):
     except Exception as e:
         if conn: conn.rollback()
         print(f"Database Error: {e}")
+        # Detect connection closed/terminated and retry once if needed could be added here
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
     finally:
         if conn: release_db_connection(conn)
@@ -187,35 +173,50 @@ def get_student_image(roll: str, request: Request):
     student = execute_query('SELECT image_url FROM students WHERE roll = %s', (roll,), fetch="one")
     
     if not student or not student['image_url']:
-        # Return a placeholder or 404
         raise HTTPException(status_code=404, detail="Image not found")
     
     image_url = student['image_url']
     
-    # If it's already a public URL (like Cloudinary), redirect or fetch directly
+    # If it's already a public URL (like Cloudinary), redirect
     if "eshiksabd.com" not in image_url:
         return Response(status_code=307, headers={"Location": image_url})
 
     session = get_remote_session()
     
     try:
-        # Attempt fetch
-        resp = session.get(image_url, stream=True, timeout=10)
+        # 1. Try fetching without explicit login first (uses existing session if warm)
+        # Using a shorter timeout for the connect phase to fail fast if blocked
+        resp = session.get(image_url, stream=True, timeout=(5, 10))
         
-        # If 403/401/Login page, try re-login
-        if resp.status_code != 200 or "login" in resp.url.lower():
-            print("Refreshing session for image proxy...")
+        # 2. If we get a login page or 403, we need to authenticate
+        # "Authentication" in url is specific to this target site's redirect behavior
+        if resp.status_code != 200 or "login" in resp.url.lower() or "Authentication" in resp.url:
+            print(f"Refreshing session for image proxy: {roll}")
             login_url = "https://dhakacollege.eshiksabd.com/Authentication"
-            session.post(login_url, data={'username': 'dcstudent', 'password': 'dcstudent', 'submit': 'Sign In'})
-            resp = session.get(image_url, stream=True, timeout=10)
+            payload = {
+                'username': 'dcstudent',
+                'password': 'dcstudent',
+                'submit': 'Sign In'
+            }
+            # Perform login
+            login_resp = session.post(login_url, data=payload, timeout=10)
+            
+            # Retry the image fetch
+            resp = session.get(image_url, stream=True, timeout=(5, 10))
             
         if resp.status_code == 200:
-            return Response(content=resp.content, media_type=resp.headers.get("Content-Type", "image/jpeg"))
+            # Return with Cache-Control to prevent browser from asking again for 24h
+            return Response(
+                content=resp.content, 
+                media_type=resp.headers.get("Content-Type", "image/jpeg"),
+                headers={"Cache-Control": "public, max-age=86400"}
+            )
         else:
             raise HTTPException(status_code=404, detail="Failed to fetch remote image")
             
     except Exception as e:
-        print(f"Proxy error: {e}")
+        print(f"Proxy error for {roll}: {e}")
+        # Fallback placeholder could be returned here if desired
         raise HTTPException(status_code=500, detail="Image proxy error")
 
 @app.get("/api/results/{roll}")
