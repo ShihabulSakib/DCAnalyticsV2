@@ -3,11 +3,12 @@ import requests
 import sys
 import os
 import time
+import json
 from bs4 import BeautifulSoup
 
 # Correctly import from our new modules
 from robust_parser import parse_pdf
-from database import get_or_create_student_id, get_or_create_exam_id, save_result_and_marks, init_db
+from database import save_batch_results, init_db, get_or_create_exam_id
 
 # --- Configuration ---
 USERNAME = 'dcstudent'
@@ -42,14 +43,82 @@ class Scraper:
             print(f"Login Error: {e}")
             return False
 
-    def get_exam_list(self):
+    def get_session_list(self):
+        """Fetch available academic sessions."""
+        print("Fetching Session List...")
+        # Based on investigation, sessions are available via a direct HTML page
+        # We'll navigate to the result page and extract session options
+        try:
+            # Navigate to Result Enquiry Center
+            resp = self.session.get(BASE_URL + 'Result-Enquiry-Center', headers=HEADERS)
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            
+            # Find session select element (ID: accSessionID)
+            session_select = soup.find('select', {'id': 'accSessionID'})
+            if session_select:
+                options = session_select.find_all('option')
+                sessions = [{'id': opt.get('value'), 'name': opt.text.strip()} 
+                           for opt in options if opt.get('value')]
+                return sessions
+            return []
+        except Exception as e:
+            print(f"Error fetching sessions: {e}")
+            return []
+    
+    def get_exam_levels(self):
+        """Fetch available exam levels (HSC, Hons, Masters, etc.)."""
+        print("Fetching Exam Levels...")
+        try:
+            resp = self.session.get(BASE_URL + 'Result-Enquiry-Center', headers=HEADERS)
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            
+            # Find exam level select (ID: examLevel)
+            level_select = soup.find('select', {'id': 'examLevel'})
+            if level_select:
+                options = level_select.find_all('option')
+                levels = [{'id': opt.get('value'), 'name': opt.text.strip()} 
+                         for opt in options if opt.get('value')]
+                return levels
+            return []
+        except Exception as e:
+            print(f"Error fetching exam levels: {e}")
+            return []
+    
+    def get_faculty_list(self, exam_level):
+        """Fetch available faculties/departments for a specific exam level."""
+        print("Fetching Faculty/Group List...")
+        
+
+        try:
+            # Faculty options are statically loaded on the Result-Enquiry-Center page
+            resp = self.session.get(BASE_URL + 'Result-Enquiry-Center', headers=HEADERS)
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            
+            # The correct select element is 'facultyID' (not 'accFacultyID')
+            faculty_select = soup.find('select', {'id': 'facultyID'})
+            if faculty_select:
+                options = faculty_select.find_all('option')
+                faculties = [{'id': opt.get('value'), 'name': opt.text.strip()} 
+                            for opt in options if opt.get('value')]
+                
+                # Filter by exam level if needed (for HSC, filter for "HSC -" prefix)
+                if exam_level == 'HSC':
+                    faculties = [f for f in faculties if 'HSC' in f['name']]
+                
+                return faculties
+            return []
+
+        except Exception as e:
+            print(f"Error fetching faculties: {e}")
+            return []
+
+    def get_exam_list(self, faculty_id, session_id):
+        """Fetch exam list for a specific faculty and session."""
         print("Fetching Exam List...")
-        FACULTY_ID = '4'
-        SESSION_ID = '20' # 2024-2025
         
         payload = {
-            'rootData': FACULTY_ID,
-            'sessionID': SESSION_ID,
+            'rootData': faculty_id,
+            'sessionID': session_id,
             'flagreq': 'searchExamList'
         }
         
@@ -69,19 +138,19 @@ class Scraper:
         try:
             resp = self.session.post(CONTROLLER_URL, data=p_payload, headers=HEADERS)
             if "Error" in resp.text or "not found" in resp.text.lower():
-                return False, "No Result/Permission"
+                return False, "No Result/Permission", None
         except Exception as e:
-            return False, f"Permission Check Error: {e}"
+            return False, f"Permission Check Error: {e}", None
 
         # 2. Get URL
         t_payload = {'rootData': roll, 'examList': exam_id, 'flagreq': 'checkStudentTranscript'}
         try:
             resp = self.session.post(CONTROLLER_URL, data=t_payload, headers=HEADERS)
             url_part = resp.text.strip()
-            if not url_part: return False, "Empty URL"
+            if not url_part: return False, "Empty URL", None
             final_url = url_part if url_part.startswith('http') else BASE_URL + url_part
         except Exception as e:
-            return False, f"Get URL Error: {e}"
+            return False, f"Get URL Error: {e}", None
 
         # 3. Download PDF to a temporary file
         filepath = os.path.join(DOWNLOAD_DIR, f"{roll}_{exam_id}.pdf")
@@ -92,56 +161,120 @@ class Scraper:
             with open(filepath, 'wb') as f:
                 f.write(pdf_resp.content)
         except Exception as e:
-            return False, f"Download Error: {e}"
+            return False, f"Download Error: {e}", None
 
-        # 4. Parse & Save using the CORRECT database functions
+        # 4. Parse 
         try:
             student_data, subjects_data = parse_pdf(filepath)
             
-            if not student_data or not student_data.get('roll'):
-                return False, "Parsing Failed (Content Extraction Error)"
-
-            # Get the primary keys for student and exam
-            student_id_db = get_or_create_student_id(
-                student_data['roll'], 
-                student_data.get('name'), 
-                student_data.get('student_group'), 
-                student_data.get('session')
-            )
-            exam_id_db = get_or_create_exam_id(exam_id, exam_name)
+            # Clean up the downloaded PDF
+            if os.path.exists(filepath):
+                os.remove(filepath)
             
-            # Structure data for saving
-            result_data = {
+            if not student_data or not student_data.get('roll'):
+                return False, "Parsing Failed (Content Extraction Error)", None
+
+            # Prepare data object for batch processing
+            # We add exam details here so the batch processor knows where to put it
+            data = {
+                'roll': student_data['roll'],
+                'name': student_data.get('name'),
+                'student_group': student_data.get('student_group'),
+                'session': student_data.get('session'),
+                'exam_id_text': exam_id,
+                'exam_name': exam_name,
                 'gpa': student_data.get('gpa'),
                 'total_marks': student_data.get('total_marks'),
                 'status': student_data.get('status'),
+                'transcript_url': final_url,
                 'subjects': subjects_data
             }
-
-            # Save everything to the PostgreSQL database
-            save_result_and_marks(student_id_db, exam_id_db, result_data)
             
-            # Clean up the downloaded PDF
-            os.remove(filepath)
-            
-            return True, "Success"
+            return True, "Success", data
         except Exception as e:
-            import traceback
-            traceback.print_exc()
-            return False, f"Processing Error: {e}"
+            return False, f"Processing Error: {e}", None
 
     def run(self):
         if not self.login():
             return
 
-        exams = self.get_exam_list()
+        # Step 1: Select Exam Level (HSC, Hons, etc.)
+        exam_levels = self.get_exam_levels()
+        if not exam_levels:
+            print("No exam levels found.")
+            return
+        
+        print("\nAvailable Exam Levels:")
+        for idx, level in enumerate(exam_levels):
+            print(f"{idx + 1}. {level['name']}")
+        
+        try:
+            level_selection = int(input("\nSelect Exam Level (Number): ")) - 1
+            if not (0 <= level_selection < len(exam_levels)):
+                print("Invalid selection.")
+                return
+            
+            selected_level = exam_levels[level_selection]
+            print(f"Selected: {selected_level['name']}\n")
+        except ValueError:
+            print("Invalid input.")
+            return
+
+        # Step 2: Select Faculty/Group (dynamically loaded based on exam level)
+        faculties = self.get_faculty_list(selected_level['id'])
+        if not faculties:
+            print("No faculties found.")
+            return
+        
+        print("Available Groups:")
+        for idx, faculty in enumerate(faculties):
+            print(f"{idx + 1}. {faculty['name']}")
+        
+        try:
+            faculty_selection = int(input("\nSelect Group (Number): ")) - 1
+            if not (0 <= faculty_selection < len(faculties)):
+                print("Invalid selection.")
+                return
+            
+            selected_faculty = faculties[faculty_selection]
+            print(f"Selected: {selected_faculty['name']}\n")
+        except ValueError:
+            print("Invalid input.")
+            return
+        
+        # Step 3: Select Session
+        sessions = self.get_session_list()
+        if not sessions:
+            print("No sessions found.")
+            return
+        
+        # Show only latest 3 sessions
+        latest_sessions = sessions[:3]
+        print("Available Sessions (Latest 3):")
+        for idx, session in enumerate(latest_sessions):
+            print(f"{idx + 1}. {session['name']}")
+        
+        try:
+            session_selection = int(input("\nSelect Session (Number): ")) - 1
+            if not (0 <= session_selection < len(latest_sessions)):
+                print("Invalid selection.")
+                return
+            
+            selected_session = latest_sessions[session_selection]
+            print(f"Selected: {selected_session['name']}\n")
+        except ValueError:
+            print("Invalid input.")
+            return
+        
+        # Step 4: Select Exam
+        exams = self.get_exam_list(selected_faculty['id'], selected_session['id'])
         if not exams:
             print("No exams found.")
             return
 
-        print("\nAvailable Exams:")
+        print("Available Exams:")
         for idx, exam in enumerate(exams):
-            print(f"{idx + 1}. {exam['name']} (ID: {exam['id']})")
+            print(f"{idx + 1}. {exam['name']}")
         
         try:
             selection = int(input("\nSelect Exam (Number): ")) - 1
@@ -152,7 +285,7 @@ class Scraper:
             selected_exam = exams[selection]
             
             # This now correctly uses the PostgreSQL function to ensure the exam is in the DB
-            print(f"Ensuring exam exists in DB: {selected_exam['name']} ({selected_exam['id']})")
+            print(f"\nEnsuring exam exists in DB: {selected_exam['name']} ({selected_exam['id']})")
             get_or_create_exam_id(selected_exam['id'], selected_exam['name'])
             
             print(f"\nSelected: {selected_exam['name']}")
@@ -160,23 +293,62 @@ class Scraper:
             start_roll = int(input("Enter Start Roll: ").strip())
             end_roll = int(input("Enter End Roll: ").strip())
             
-            print(f"\nStarting scraping for rolls {start_roll} to {end_roll}...")
+            total_students = end_roll - start_roll + 1
+            # Determine chunk size logically
+            if total_students > 100:
+                CHUNK_SIZE = 50
+            else:
+                CHUNK_SIZE = total_students # Process all at once if small batch
             
+            print(f"\nStarting scraping for rolls {start_roll} to {end_roll}...")
+            print(f"Batching enabled. Chunk size: {CHUNK_SIZE}")
+            
+            batch_data = []
             success_count = 0
+            processed_count = 0
+            
             for r in range(start_roll, end_roll + 1):
                 roll_str = str(r)
                 print(f"Processing Roll {roll_str}...", end=' ', flush=True)
                 
-                success, msg = self.scrape_student(roll_str, selected_exam['id'], selected_exam['name'])
-                if success:
-                    print("OK")
-                    success_count += 1
+                success, msg, data = self.scrape_student(roll_str, selected_exam['id'], selected_exam['name'])
+                if success and data:
+                    print("OK (Queued)")
+                    batch_data.append(data)
                 else:
                     print(f"Failed ({msg})")
                 
+                processed_count += 1
+                
+                # Check if we reached chunk size or end of loop
+                if len(batch_data) >= CHUNK_SIZE or (r == end_roll and len(batch_data) > 0):
+                    print(f"\n--- Saving Batch of {len(batch_data)} records ---")
+                    
+                    # 1. Save to JSON Backup
+                    backup_file = f"chunk_backup_{r}.json"
+                    try:
+                        with open(backup_file, 'w', encoding='utf-8') as f:
+                            json.dump(batch_data, f, ensure_ascii=False, indent=2)
+                    except Exception as e:
+                        print(f"Warning: Failed to create backup JSON: {e}")
+
+                    # 2. Save to Database
+                    if save_batch_results(batch_data):
+                        success_count += len(batch_data)
+                        batch_data = [] # Clear batch
+                        
+                        # 3. Delete Backup on Success
+                        if os.path.exists(backup_file):
+                            os.remove(backup_file)
+                    else:
+                        print("CRITICAL ERROR: Failed to save batch to database. Data is preserved in JSON backup.")
+                        # We don't clear batch_data here, maybe we should stop? 
+                        # For now, let's keep going but user has the JSON.
+                        batch_data = [] 
+
                 time.sleep(0.5) # Politeness delay
             
-            print(f"\nCompleted. Successfully scraped {success_count} results.")
+            print(f"\nCompleted. Successfully scraped and saved {success_count} results.")
 
         except ValueError:
             print("Invalid input. Please enter numbers.")

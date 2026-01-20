@@ -1,11 +1,11 @@
-
 import requests
 from bs4 import BeautifulSoup
 import re
 import logging
 import json
 import os
-from database import get_conn, init_db
+import time
+from database import get_conn, init_db, save_batch_profiles
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -170,75 +170,6 @@ class ProfileScraper:
             logger.error(f"Error parsing data for {roll}: {e}")
             return None
 
-# JSON Storage Logic
-def save_to_json(data, filename="scraped_profiles.json"):
-    """Saves the scraped data to a JSON file."""
-    try:
-        # Load existing data if file exists
-        if os.path.exists(filename):
-            with open(filename, 'r') as f:
-                try:
-                    existing_data = json.load(f)
-                except json.JSONDecodeError:
-                    existing_data = []
-        else:
-            existing_data = []
-            
-        # Append or Update
-        # Check if roll already exists
-        updated = False
-        for i, item in enumerate(existing_data):
-            if str(item.get('roll')) == str(data.get('roll')):
-                existing_data[i] = data
-                updated = True
-                break
-        
-        if not updated:
-            existing_data.append(data)
-            
-        with open(filename, 'w') as f:
-            json.dump(existing_data, f, indent=4)
-        
-        logger.info(f"Data saved to {filename}")
-            
-    except Exception as e:
-        logger.error(f"Failed to save JSON: {e}")
-
-# Database Upsert Logic
-def upsert_student_to_db(student_data):
-    """
-    Insert or Update student data in the 'students' table.
-    """
-    if not student_data:
-        return
-    
-    conn = get_conn()
-    try:
-        with conn.cursor() as cur:
-            cur.execute('''
-                INSERT INTO students (roll, name, student_group, session, image_url, academic_year)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (roll) DO UPDATE SET
-                    name = EXCLUDED.name,
-                    student_group = EXCLUDED.student_group,
-                    session = EXCLUDED.session,
-                    image_url = EXCLUDED.image_url,
-                    academic_year = EXCLUDED.academic_year
-            ''', (
-                student_data['roll'],
-                student_data['name'],
-                student_data['group_name'],
-                student_data['session'],
-                student_data['photo_url'],
-                student_data.get('academic_year')
-            ))
-            conn.commit()
-            logger.info(f"Upserted Student to DB: {student_data['roll']} - {student_data['name']}")
-    except Exception as e:
-        logger.error(f"DB Error for {student_data['roll']}: {e}")
-    finally:
-        conn.close()
-
 if __name__ == "__main__":
     # Ensure database schema is up to date
     try:
@@ -266,17 +197,63 @@ if __name__ == "__main__":
         if end_roll < start_roll:
             print("End roll cannot be smaller than start roll.")
         else:
+            total_students = end_roll - start_roll + 1
+            # Determine chunk size logically
+            if total_students > 100:
+                CHUNK_SIZE = 50
+            else:
+                CHUNK_SIZE = total_students # Process all at once if small batch
+            
+            print(f"\nStarting scraping for rolls {start_roll} to {end_roll}...")
+            print(f"Batching enabled. Chunk size: {CHUNK_SIZE}")
+            
+            batch_data = []
+            success_count = 0
+            processed_count = 0
+            
             for r in range(start_roll, end_roll + 1):
                 roll_str = str(r)
-                print(f"Scraping profile for roll {roll_str}...")
+                print(f"Processing Roll {roll_str}...", end=' ', flush=True)
                 
                 profile_data = scraper.scrape_student(roll_str)
                 
                 if profile_data:
-                    # Save to Database
-                    upsert_student_to_db(profile_data)
+                    print("OK (Queued)")
+                    batch_data.append(profile_data)
                 else:
-                    print(f"Failed to scrape data for {roll_str}.")
+                    print("Failed")
+                
+                processed_count += 1
+                
+                # Check if we reached chunk size or end of loop
+                if len(batch_data) >= CHUNK_SIZE or (r == end_roll and len(batch_data) > 0):
+                    print(f"\n--- Saving Batch of {len(batch_data)} records ---")
+                    
+                    # 1. Save to JSON Backup
+                    backup_file = f"profile_chunk_backup_{r}.json"
+                    try:
+                        with open(backup_file, 'w', encoding='utf-8') as f:
+                            json.dump(batch_data, f, ensure_ascii=False, indent=2)
+                    except Exception as e:
+                        print(f"Warning: Failed to create backup JSON: {e}")
+
+                    # 2. Save to Database
+                    if save_batch_profiles(batch_data):
+                        success_count += len(batch_data)
+                        batch_data = [] # Clear batch
+                        
+                        # 3. Delete Backup on Success
+                        if os.path.exists(backup_file):
+                            os.remove(backup_file)
+                    else:
+                        print("CRITICAL ERROR: Failed to save batch to database. Data is preserved in JSON backup.")
+                        # We don't clear batch_data here, maybe we should stop?
+                        # For now, let's keep going but user has the JSON.
+                        batch_data = [] 
+
+                time.sleep(0.5) # Politeness delay
+            
+            print(f"\nCompleted. Successfully scraped and saved {success_count} profiles.")
                     
     except ValueError:
         print("Invalid roll number input. Please enter numeric values.")
