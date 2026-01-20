@@ -1,7 +1,7 @@
 
 import os
 import psycopg2
-from psycopg2.pool import SimpleConnectionPool
+
 from psycopg2.extras import RealDictCursor
 from fastapi import FastAPI, HTTPException, Query, Request, Header, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,9 +13,7 @@ import jwt
 import requests
 from datetime import datetime, timedelta
 from passlib.context import CryptContext
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
+
 
 # Load environment variables
 load_dotenv()
@@ -28,14 +26,10 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 1440 # 24 hours
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/admin/login")
 
-# Rate Limiter
-limiter = Limiter(key_func=get_remote_address)
+
 
 # --- Database Setup ---
 DATABASE_URL = os.getenv("DATABASE_URL")
-
-# Global pool variable
-pool = None
 
 # --- Remote Image Proxy Session ---
 remote_session = None
@@ -54,25 +48,24 @@ def get_remote_session():
     return remote_session
 
 def get_db_connection():
-    """Gets a connection from the pool, creating it if necessary."""
-    global pool
-    if pool is None:
-        try:
-            # For Vercel/Serverless + Neon: Keep pool small (1 connection) to avoid "too many connections"
-            pool = SimpleConnectionPool(minconn=1, maxconn=1, dsn=DATABASE_URL)
-        except Exception as e:
-            print(f"Failed to create connection pool: {e}")
-            raise e
-    return pool.getconn()
+    """Gets a new database connection (No Pooling for Vercel)."""
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        return conn
+    except Exception as e:
+        print(f"Failed to connect to database: {e}")
+        raise e
 
 def release_db_connection(conn):
-    """Releases a connection back to the pool."""
-    global pool
-    if pool:
-        pool.putconn(conn)
+    """Closes the database connection."""
+    if conn:
+        try:
+            conn.close()
+        except Exception as e:
+            print(f"Error closing connection: {e}")
 
 def execute_query(query, params=None, fetch=None):
-    """A helper function to execute queries with connection pooling."""
+    """A helper function to execute queries with a fresh connection."""
     conn = None
     try:
         conn = get_db_connection()
@@ -87,17 +80,18 @@ def execute_query(query, params=None, fetch=None):
             conn.commit()
             return result
     except Exception as e:
-        if conn: conn.rollback()
+        if conn:
+            try:
+                conn.rollback()
+            except:
+                pass
         print(f"Database Error: {e}")
-        # Detect connection closed/terminated and retry once if needed could be added here
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
     finally:
         if conn: release_db_connection(conn)
 
 # --- FastAPI App Initialization ---
 app = FastAPI()
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -154,20 +148,20 @@ def get_section_from_roll(roll: str) -> str:
 # --- API Endpoints ---
 
 @app.get("/api/sessions")
-@limiter.limit("60/minute")
+
 def get_sessions(request: Request):
     """Get list of available sessions."""
     rows = execute_query('SELECT DISTINCT session FROM students WHERE session IS NOT NULL ORDER BY session DESC', fetch="all")
     return [r['session'] for r in rows]
 
 @app.get("/api/exams")
-@limiter.limit("60/minute")
+
 def get_exams(request: Request):
     """Get list of available exams."""
     return execute_query('SELECT * FROM exams', fetch="all")
 
 @app.get("/api/student-image/{roll}")
-@limiter.limit("120/minute")
+
 def get_student_image(roll: str, request: Request):
     """Proxy student image to handle authentication."""
     student = execute_query('SELECT image_url FROM students WHERE roll = %s', (roll,), fetch="one")
@@ -220,7 +214,7 @@ def get_student_image(roll: str, request: Request):
         raise HTTPException(status_code=500, detail="Image proxy error")
 
 @app.get("/api/results/{roll}")
-@limiter.limit("60/minute")
+
 def get_student_result(roll: str, request: Request, exam_id: str = None, x_accessor_roll: str = Header(None)):
     """Get a student's result for a specific exam (or latest)."""
     student = execute_query('SELECT * FROM students WHERE roll = %s', (roll,), fetch="one")
@@ -265,7 +259,7 @@ class StudentLogin(BaseModel):
     roll: str
 
 @app.post("/api/login")
-@limiter.limit("5/minute")
+
 def student_login(data: StudentLogin, request: Request):
     """Log in a student and log the access."""
     student = execute_query('SELECT * FROM students WHERE roll = %s', (data.roll,), fetch="one")
@@ -335,7 +329,7 @@ def update_student(roll: str, data: dict, current_user: str = Depends(get_curren
     return {"success": True}
 
 @app.get("/api/merit-list")
-@limiter.limit("60/minute")
+
 def get_merit_list(
     request: Request,
     sort_by: str = Query("gpa", enum=["gpa", "marks"]),
@@ -391,7 +385,7 @@ def get_merit_list(
     ]
 
 @app.get("/api/analytics")
-@limiter.limit("60/minute")
+
 def get_analytics(request: Request, exam_id: str = None):
     """Get analytics for a specific exam."""
     if not exam_id:
