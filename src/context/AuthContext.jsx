@@ -37,6 +37,8 @@ export const AuthProvider = ({ children }) => {
         setUser(null);
         localStorage.removeItem('user');
         localStorage.removeItem('token');
+        localStorage.removeItem('menuHintSeen');
+        localStorage.removeItem('filterHintSeen'); // Reset second hint as well
     };
 
     const isAdmin = () => {

@@ -41,7 +41,7 @@ const parseStudentRoll = (roll) => {
 };
 
 const ResultsView = () => {
-    const { user } = useAuth();
+    const { user, isAdmin } = useAuth();
     const outletCtx = useOutletContext();
     const menuHintDismissed = outletCtx?.menuHintDismissed;
     
@@ -54,11 +54,19 @@ const ResultsView = () => {
     const [sessions, setSessions] = useState([]);
     const [selectedExam, setSelectedExam] = useState(null);
 
-    // Filters
+    // Active Filters
     const [selectedSession, setSelectedSession] = useState('All');
     const [selectedGroup, setSelectedGroup] = useState('All');
     const [sortBy, setSortBy] = useState('gpa');
     const [selectedSection, setSelectedSection] = useState('All');
+
+    // Temporary Filters (for Mobile Menu)
+    const [tempFilters, setTempFilters] = useState({
+        sortBy: 'gpa',
+        section: 'All',
+        group: 'All',
+        session: 'All'
+    });
 
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -107,7 +115,8 @@ const ResultsView = () => {
 
             const examsList = examsRes.data;
             setExams(examsList);
-            setSessions(sessionsRes.data);
+            const sessionsList = sessionsRes.data;
+            setSessions(sessionsList);
 
             if (examsList.length > 0) {
                 const latest = examsList[examsList.length - 1];
@@ -115,6 +124,19 @@ const ResultsView = () => {
             } else {
                 setLoading(false);
             }
+
+            // Admin Default Filter Logic
+            if (isAdmin() && sessionsList.length > 0) {
+                // Find latest numeric session (e.g. 2024-2025)
+                // Assuming session format is YYYY-YYYY or similar
+                // Simple sort descending logic
+                const sortedSessions = [...sessionsList].sort().reverse();
+                if (sortedSessions.length > 0) {
+                     setSelectedSession(sortedSessions[0]);
+                }
+                setSelectedGroup('Science');
+            }
+
         } catch (err) {
             console.error('Failed to load data:', err);
             setError('Failed to load data. Please check connection.');
@@ -135,6 +157,26 @@ const ResultsView = () => {
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleOpenMenu = () => {
+        // Initialize temp filters with current active values
+        setTempFilters({
+            sortBy,
+            section: selectedSection,
+            group: selectedGroup,
+            session: selectedSession
+        });
+        setIsMenuOpen(true);
+        handleDismissFilterHint();
+    };
+
+    const handleApplyFilters = () => {
+        setSortBy(tempFilters.sortBy);
+        setSelectedSection(tempFilters.section);
+        setSelectedGroup(tempFilters.group);
+        setSelectedSession(tempFilters.session);
+        setIsMenuOpen(false);
     };
 
     const filteredStudents = students.filter(s =>
@@ -210,7 +252,6 @@ const ResultsView = () => {
                         >
                             Results
                         </button>
-                        {/* Analytics disabled on mobile for now. Remove 'hidden md:inline-block' to enable on all devices. */}
                         <button
                             onClick={() => setViewMode('analytics')}
                             className={`hidden md:inline-block px-3 md:px-4 py-1.5 rounded-md text-sm font-medium transition-all ${viewMode === 'analytics' ? 'bg-white dark:bg-zinc-800 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
@@ -233,25 +274,47 @@ const ResultsView = () => {
                         </div>
 
                         {/* Mobile Filter Button */}
-                        <button
-                            onClick={() => {
-                                setIsMenuOpen(true);
-                                handleDismissFilterHint();
-                            }}
-                            className="md:hidden flex items-center gap-2 p-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors shadow-sm relative shrink-0"
-                        >
-                            <Filter size={20} />
-                            {(selectedSession !== 'All' || selectedGroup !== 'All' || selectedSection !== 'All') && (
-                                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-indigo-500 rounded-full border-2 border-white dark:border-zinc-900"></span>
-                            )}
-                        </button>
+                        <div className="relative">
+                            <button
+                                onClick={handleOpenMenu}
+                                className="md:hidden flex items-center gap-2 p-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors shadow-sm relative shrink-0"
+                            >
+                                <Filter size={20} />
+                                {(selectedSession !== 'All' || selectedGroup !== 'All' || selectedSection !== 'All') && (
+                                    <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-indigo-500 rounded-full border-2 border-white dark:border-zinc-900"></span>
+                                )}
+                            </button>
+                            
+                            <AnimatePresence>
+                                {showDiscoveryHint && (
+                                    <motion.div
+                                        initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                                        exit={{ opacity: 0, scale: 0.9 }}
+                                        className="md:hidden absolute top-12 right-0 z-40 w-[240px]"
+                                    >
+                                        <div className="relative bg-indigo-600 text-white text-xs p-3 rounded-lg shadow-xl border border-indigo-400/30">
+                                            <button onClick={handleDismissFilterHint} className="absolute top-1 right-1 text-indigo-200 hover:text-white"><X size={12} /></button>
+                                            <div className="flex gap-2">
+                                                <Filter className="w-4 h-4 text-indigo-200 shrink-0 mt-0.5" />
+                                                <div>
+                                                    <p className="font-bold mb-1">Advanced Filters</p>
+                                                    <p className="leading-relaxed opacity-90">Tap here to sort by Marks, filter by Section, Group, or Session.</p>
+                                                </div>
+                                            </div>
+                                            <div className="absolute -top-1.5 right-4 w-3 h-3 bg-indigo-600 rotate-45"></div>
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </div>
                     </div>
 
                     {/* Desktop Filters (Visible only on Desktop) */}
                     <DesktopFilters />
                 </div>
 
-            {/* Mobile Filter Modal (Same as before) */}
+            {/* Mobile Filter Modal */}
             <AnimatePresence>
                 {isMenuOpen && (
                     <>
@@ -270,24 +333,28 @@ const ResultsView = () => {
                                 </div>
                                 <div className="flex-1 overflow-y-auto space-y-6">
                                     <div className="space-y-4">
-                                        <div className="space-y-2">
-                                            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Exam</label>
-                                            <select value={selectedExam || ''} onChange={(e) => setSelectedExam(e.target.value)} className="w-full px-3 py-2.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500/20">
-                                                {exams.map(exam => <option key={exam.id} value={exam.id}>{exam.name}</option>)}
-                                            </select>
-                                        </div>
+                                        
+                                        {/* Exam Dropdown Removed from here and moved to main view */}
 
                                         <div className="grid grid-cols-2 gap-3">
                                             <div className="space-y-2">
                                                 <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Sort</label>
-                                                <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="w-full px-3 py-2.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500/20">
+                                                <select 
+                                                    value={tempFilters.sortBy} 
+                                                    onChange={(e) => setTempFilters({...tempFilters, sortBy: e.target.value})} 
+                                                    className="w-full px-3 py-2.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                                >
                                                     <option value="gpa">Best GPA</option>
                                                     <option value="marks">Highest Marks</option>
                                                 </select>
                                             </div>
                                             <div className="space-y-2">
                                                 <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Section</label>
-                                                <select value={selectedSection} onChange={(e) => setSelectedSection(e.target.value)} className="w-full px-3 py-2.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500/20">
+                                                <select 
+                                                    value={tempFilters.section} 
+                                                    onChange={(e) => setTempFilters({...tempFilters, section: e.target.value})} 
+                                                    className="w-full px-3 py-2.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                                >
                                                     <option value="All">All</option>
                                                     {['A', 'B', 'C', 'D', 'E', 'F'].map(sec => <option key={sec} value={sec}>{sec}</option>)}
                                                 </select>
@@ -296,7 +363,11 @@ const ResultsView = () => {
 
                                         <div className="space-y-2">
                                             <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Group</label>
-                                            <select value={selectedGroup} onChange={(e) => setSelectedGroup(e.target.value)} className="w-full px-3 py-2.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500/20">
+                                            <select 
+                                                value={tempFilters.group} 
+                                                onChange={(e) => setTempFilters({...tempFilters, group: e.target.value})} 
+                                                className="w-full px-3 py-2.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                            >
                                                 <option value="All">All Groups</option>
                                                 <option value="Science">Science</option>
                                                 <option value="Business Studies">Business</option>
@@ -306,7 +377,11 @@ const ResultsView = () => {
 
                                         <div className="space-y-2">
                                             <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Session</label>
-                                            <select value={selectedSession} onChange={(e) => setSelectedSession(e.target.value)} className="w-full px-3 py-2.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500/20">
+                                            <select 
+                                                value={tempFilters.session} 
+                                                onChange={(e) => setTempFilters({...tempFilters, session: e.target.value})} 
+                                                className="w-full px-3 py-2.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                            >
                                                 <option value="All">All Sessions</option>
                                                 {sessions.map((sess, idx) => <option key={idx} value={sess}>{sess}</option>)}
                                             </select>
@@ -314,7 +389,7 @@ const ResultsView = () => {
                                     </div>
                                 </div>
                                 <div className="mt-6 pt-4 border-t border-zinc-200 dark:border-zinc-800">
-                                    <button onClick={() => setIsMenuOpen(false)} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-500/20 active:scale-[0.98] transition-transform">Apply Filters</button>
+                                    <button onClick={handleApplyFilters} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-500/20 active:scale-[0.98] transition-transform">Apply Filters</button>
                                 </div>
                             </div>
                         </motion.div>
@@ -322,19 +397,32 @@ const ResultsView = () => {
                 )}
             </AnimatePresence>
 
-            <div className="flex-1 min-h-0 bg-white dark:bg-zinc-900/50 rounded-xl border border-zinc-200 dark:border-zinc-800/50 shadow-sm overflow-hidden relative">
+            <div className="flex-1 min-h-0 bg-white dark:bg-zinc-900/50 rounded-xl border border-zinc-200 dark:border-zinc-800/50 shadow-sm overflow-hidden relative flex flex-col">
                 {loading && (
                     <div className="absolute inset-0 bg-white/50 dark:bg-black/50 z-10 flex items-center justify-center backdrop-blur-[1px]">
                         <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
                     </div>
                 )}
 
+                {/* Mobile Exam Select (Visible on Mobile only, at the top of Result tab) */}
+                <div className="md:hidden p-3 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
+                    <select 
+                        value={selectedExam || ''} 
+                        onChange={(e) => setSelectedExam(e.target.value)} 
+                        className="w-full px-3 py-2 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-500/20 outline-none shadow-sm"
+                    >
+                        {exams.map(exam => <option key={exam.id} value={exam.id}>{exam.name}</option>)}
+                    </select>
+                </div>
+
                 {viewMode === 'results' ? (
                     filteredStudents.length > 0 ? (
-                        <MeritList
-                            students={filteredStudents}
-                            onStudentClick={setSelectedStudent}
-                        />
+                        <div className="flex-1 min-h-0">
+                            <MeritList
+                                students={filteredStudents}
+                                onStudentClick={setSelectedStudent}
+                            />
+                        </div>
                     ) : (
                         <div className="p-8 text-center text-zinc-500 flex flex-col items-center justify-center h-full">
                             <p>No results found for these filters.</p>
