@@ -1,4 +1,3 @@
-
 import os
 import psycopg2
 from dotenv import load_dotenv
@@ -69,6 +68,15 @@ def init_db():
                     UNIQUE(student_id, exam_id)
                 )
             ''')
+
+            # Check if transcript_url column exists
+            cur.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name='results' AND column_name='transcript_url';
+            """)
+            if not cur.fetchone():
+                cur.execute('ALTER TABLE results ADD COLUMN transcript_url TEXT')
 
             cur.execute('''
                 CREATE TABLE IF NOT EXISTS subjects (
@@ -195,14 +203,21 @@ def save_result_and_marks(student_id, exam_id, data):
             # Use ON CONFLICT to handle cases where a result might be re-scraped.
             # This will update the existing record instead of creating a new one.
             cur.execute('''
-                INSERT INTO results (student_id, exam_id, gpa, total_marks, status)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO results (student_id, exam_id, gpa, total_marks, status, transcript_url)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 ON CONFLICT (student_id, exam_id) DO UPDATE SET
                     gpa = EXCLUDED.gpa,
                     total_marks = EXCLUDED.total_marks,
-                    status = EXCLUDED.status
+                    status = EXCLUDED.status,
+                    transcript_url = EXCLUDED.transcript_url
                 RETURNING id
-            ''', (student_id, exam_id, data.get('gpa', 0.0), data.get('total_marks', 0), data.get('status', 'Unknown')))
+            ''', (
+                student_id, exam_id, 
+                data.get('gpa', 0.0), 
+                data.get('total_marks', 0), 
+                data.get('status', 'Unknown'),
+                data.get('transcript_url')
+            ))
             
             result_id = cur.fetchone()[0]
 
@@ -230,9 +245,144 @@ def save_result_and_marks(student_id, exam_id, data):
     finally:
         conn.close()
 
-if __name__ == '__main__':
-    print("Initializing database schema...")
-    # This will create the tables in your Neon database.
-    # You should run this script once locally to set up the tables before deploying.
-    init_db()
-    print("Database schema initialized.")
+def save_batch_results(results_batch):
+    """
+    Saves a batch of student results in a single transaction.
+    """
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            # Cache for subject IDs to avoid repeated lookups within the batch
+            subject_cache = {}
+
+            for data in results_batch:
+                # 1. Get or Create Student
+                cur.execute("SELECT id FROM students WHERE roll = %s", (data['roll'],))
+                res = cur.fetchone()
+                if res:
+                    student_id = res[0]
+                else:
+                    cur.execute(
+                        "INSERT INTO students (roll, name, student_group, session) VALUES (%s, %s, %s, %s) RETURNING id",
+                        (data['roll'], data.get('name'), data.get('student_group'), data.get('session'))
+                    )
+                    student_id = cur.fetchone()[0]
+
+                # 2. Get or Create Exam
+                cur.execute("SELECT id FROM exams WHERE exam_id_text = %s", (data['exam_id_text'],))
+                res = cur.fetchone()
+                if res:
+                    exam_id_db = res[0]
+                    # Self-healing: If exam exists but session/group is NULL, update it
+                    cur.execute("""
+                        UPDATE exams 
+                        SET target_session = COALESCE(target_session, %s),
+                            target_group = COALESCE(target_group, %s)
+                        WHERE id = %s
+                    """, (data.get('session'), data.get('student_group'), exam_id_db))
+                else:
+                    cur.execute(
+                        "INSERT INTO exams (exam_id_text, name, target_session, target_group) VALUES (%s, %s, %s, %s) RETURNING id",
+                        (data['exam_id_text'], data['exam_name'], data.get('session'), data.get('student_group'))
+                    )
+                    exam_id_db = cur.fetchone()[0]
+
+                # 3. Insert or Update Result
+                cur.execute('''
+                    INSERT INTO results (student_id, exam_id, gpa, total_marks, status, transcript_url)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (student_id, exam_id) DO UPDATE SET
+                        gpa = EXCLUDED.gpa,
+                        total_marks = EXCLUDED.total_marks,
+                        status = EXCLUDED.status,
+                        transcript_url = EXCLUDED.transcript_url
+                    RETURNING id
+                ''', (
+                    student_id, exam_id_db, 
+                    data.get('gpa', 0.0), 
+                    data.get('total_marks', 0), 
+                    data.get('status', 'Unknown'),
+                    data.get('transcript_url')
+                ))
+                result_id = cur.fetchone()[0]
+
+                # 4. Clear old marks for this result
+                cur.execute('DELETE FROM student_marks WHERE result_id = %s', (result_id,))
+
+                # 5. Insert Marks
+                for subj in data.get('subjects', []):
+                    subj_name = subj['name']
+                    
+                    # Check cache first
+                    if subj_name in subject_cache:
+                        subject_id = subject_cache[subj_name]
+                    else:
+                        # Check DB
+                        cur.execute("SELECT id FROM subjects WHERE name = %s", (subj_name,))
+                        res = cur.fetchone()
+                        if res:
+                            subject_id = res[0]
+                        else:
+                            cur.execute("INSERT INTO subjects (name) VALUES (%s) RETURNING id", (subj_name,))
+                            subject_id = cur.fetchone()[0]
+                        subject_cache[subj_name] = subject_id
+                    
+                    cur.execute('''
+                        INSERT INTO student_marks (result_id, subject_id, cq, mcq, practical, total, grade, gp)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    ''', (
+                        result_id, subject_id, 
+                        subj.get('cq', 0), subj.get('mcq', 0), 
+                        subj.get('practical', 0), subj['total'], 
+                        subj['grade'], subj['gp']
+                    ))
+
+        conn.commit()
+        print(f"Successfully saved batch of {len(results_batch)} records.")
+        return True
+    except Exception as e:
+        conn.rollback()
+        import traceback
+        traceback.print_exc()
+        print(f"Error saving batch: {e}")
+        return False
+    finally:
+        conn.close()
+
+def save_batch_profiles(profiles_batch):
+    """
+    Saves a batch of student profiles in a single transaction.
+    Enriches the students table with name, group, session, image_url, etc.
+    """
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            for data in profiles_batch:
+                cur.execute('''
+                    INSERT INTO students (roll, name, student_group, session, image_url, academic_year)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (roll) DO UPDATE SET
+                        name = COALESCE(EXCLUDED.name, students.name),
+                        student_group = COALESCE(EXCLUDED.student_group, students.student_group),
+                        session = COALESCE(EXCLUDED.session, students.session),
+                        image_url = COALESCE(EXCLUDED.image_url, students.image_url),
+                        academic_year = COALESCE(EXCLUDED.academic_year, students.academic_year)
+                ''', (
+                    data['roll'],
+                    data.get('name'),
+                    data.get('group_name'),
+                    data.get('session'),
+                    data.get('photo_url'),
+                    data.get('academic_year')
+                ))
+        conn.commit()
+        print(f"Successfully saved batch of {len(profiles_batch)} profiles.")
+        return True
+    except Exception as e:
+        conn.rollback()
+        import traceback
+        traceback.print_exc()
+        print(f"Error saving profile batch: {e}")
+        return False
+    finally:
+        conn.close()

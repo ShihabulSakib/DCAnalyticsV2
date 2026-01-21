@@ -5,7 +5,8 @@ const api = axios.create({
     baseURL: import.meta.env.VITE_API_URL || '/api',
 });
 
-export const fetchExams = () => api.get('/exams');
+export const fetchExams = (session = null, group = null) => 
+    api.get('/exams', { params: { session, group } });
 export const fetchSessions = () => api.get('/sessions');
 export const loginUser = (roll) => api.post('/login', { roll });
 export const fetchResult = (roll, examId, accessorRoll = null) => {

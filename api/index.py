@@ -155,10 +155,27 @@ def get_sessions(request: Request):
     return [r['session'] for r in rows]
 
 @app.get("/api/exams")
-
-def get_exams(request: Request):
-    """Get list of available exams."""
-    return execute_query('SELECT * FROM exams', fetch="all")
+def get_exams(request: Request, session: str = Query(None), group: str = Query(None)):
+    """Get list of available exams, filtered by session and group using optimized columns."""
+    query = """
+        SELECT id, name, exam_id_text 
+        FROM exams 
+        WHERE 1=1
+    """
+    params = []
+    
+    # Use the new columns for filtering
+    if session and session != "All":
+        query += " AND target_session = %s"
+        params.append(session)
+    
+    if group and group != "All":
+        query += " AND target_group = %s"
+        params.append(group)
+    
+    query += " ORDER BY id DESC"
+    
+    return execute_query(query, tuple(params) if params else None, fetch="all")
 
 @app.get("/api/student-image/{roll}")
 
@@ -244,9 +261,13 @@ def get_student_result(roll: str, request: Request, exam_id: str = None, x_acces
     
     log_access(roll, "Fetch Result", request.client.host, "Success", accessor=x_accessor_roll)
 
+    # Convert to mutable dict if it's not already
+    result_dict = dict(result)
+    result_dict['original_pdf_url'] = result.get('transcript_url')
+
     return {
         "student": student,
-        "result": result, # Includes original_pdf_url
+        "result": result_dict, # Includes original_pdf_url mapped from transcript_url
         "subjects": subjects
     }
 

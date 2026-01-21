@@ -75,6 +75,12 @@ const ResultsView = () => {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [showDiscoveryHint, setShowDiscoveryHint] = useState(false);
 
+    // 1. Initial Load: Sessions & Admin Defaults
+    useEffect(() => {
+        loadInitialData();
+    }, []);
+
+    // 2. Set User Defaults if Logged In (Student)
     useEffect(() => {
         if (user && user.roll) {
             const { session, group, section } = parseStudentRoll(user.roll);
@@ -82,9 +88,9 @@ const ResultsView = () => {
             setSelectedGroup(group);
             setSelectedSection(section);
         }
-        loadData();
     }, [user]);
 
+    // 3. Hints Logic
     useEffect(() => {
         if (menuHintDismissed) {
             const filterSeen = localStorage.getItem('filterHintSeen');
@@ -100,47 +106,69 @@ const ResultsView = () => {
         localStorage.setItem('filterHintSeen', 'true');
     };
 
+    // 4. Fetch Exams when Session or Group changes
+    useEffect(() => {
+        loadExams();
+    }, [selectedSession, selectedGroup]);
+
+    // 5. Fetch Merit List when Exam or Filters change
     useEffect(() => {
         if (selectedExam) {
             loadMeritList();
+        } else {
+            setStudents([]); // Clear list if no exam selected
         }
     }, [selectedExam, selectedSession, selectedGroup, sortBy, selectedSection]);
 
-    const loadData = async () => {
+    const loadInitialData = async () => {
         try {
-            const [examsRes, sessionsRes] = await Promise.all([
-                fetchExams(),
-                fetchSessions()
-            ]);
-
-            const examsList = examsRes.data;
-            setExams(examsList);
+            const sessionsRes = await fetchSessions();
             const sessionsList = sessionsRes.data;
             setSessions(sessionsList);
 
-            if (examsList.length > 0) {
-                const latest = examsList[examsList.length - 1];
-                setSelectedExam(latest.id);
-            } else {
-                setLoading(false);
-            }
-
             // Admin Default Filter Logic
+            // Only runs if admin is logged in. 
+            // Setting state here triggers the loadExams useEffect.
             if (isAdmin() && sessionsList.length > 0) {
-                // Find latest numeric session (e.g. 2024-2025)
-                // Assuming session format is YYYY-YYYY or similar
-                // Simple sort descending logic
                 const sortedSessions = [...sessionsList].sort().reverse();
                 if (sortedSessions.length > 0) {
                      setSelectedSession(sortedSessions[0]);
                 }
                 setSelectedGroup('Science');
             }
-
         } catch (err) {
-            console.error('Failed to load data:', err);
-            setError('Failed to load data. Please check connection.');
-            setLoading(false);
+            console.error('Failed to load sessions:', err);
+        }
+    };
+
+    const loadExams = async () => {
+        // We do NOT set main loading=true here to prevent full screen skeleton flicker
+        // when just changing filters.
+        try {
+            const response = await fetchExams(selectedSession, selectedGroup);
+            const examsList = response.data;
+            
+            if (Array.isArray(examsList)) {
+                setExams(examsList);
+
+                // Smart Selection Logic:
+                // 1. If currently selected exam exists in new list, keep it.
+                // 2. Else, select the latest one from the new list.
+                if (examsList.length > 0) {
+                    const currentExists = examsList.find(e => e.id === selectedExam);
+                    if (!currentExists) {
+                        setSelectedExam(examsList[examsList.length - 1].id);
+                    }
+                } else {
+                    setSelectedExam(null);
+                }
+            } else {
+                setExams([]);
+                setSelectedExam(null);
+            }
+        } catch (err) {
+            console.error('Failed to load exams:', err);
+            setExams([]);
         }
     };
 
@@ -184,7 +212,9 @@ const ResultsView = () => {
         String(s.roll).includes(searchQuery)
     );
 
-    if (loading && !selectedExam) {
+    if (loading && !selectedExam && exams.length === 0) {
+        // Only show full page skeleton if we have NO data at all
+        // AND we are waiting for initial load.
         return (
             <div className="h-[calc(100vh-6rem)] flex flex-col gap-4">
                 <Skeleton className="h-12 w-full" />
@@ -209,11 +239,27 @@ const ResultsView = () => {
         { value: 'Business Studies', label: 'Business' },
         { value: 'Humanities', label: 'Humanities' }
     ];
+    const sessionOptions = [
+        { value: 'All', label: 'All Sessions' },
+        ...sessions.map(s => ({ value: s, label: s }))
+    ];
 
     // Desktop Filter Component
     const DesktopFilters = () => (
         <div className="hidden md:flex flex-wrap items-center gap-2">
             <Dropdown
+                value={selectedSession}
+                onChange={(e) => setSelectedSession(e.target.value)}
+                options={sessionOptions}
+                className="w-40"
+            />
+            <Dropdown
+                value={selectedGroup}
+                onChange={(e) => setSelectedGroup(e.target.value)}
+                options={groupOptions}
+                className="w-40"
+            />
+             <Dropdown
                 value={selectedExam || ''}
                 onChange={(e) => setSelectedExam(e.target.value)}
                 options={examOptions}
@@ -230,12 +276,6 @@ const ResultsView = () => {
                 onChange={(e) => setSelectedSection(e.target.value)}
                 options={sectionOptions}
                 className="w-36"
-            />
-            <Dropdown
-                value={selectedGroup}
-                onChange={(e) => setSelectedGroup(e.target.value)}
-                options={groupOptions}
-                className="w-40"
             />
         </div>
     );
@@ -334,8 +374,6 @@ const ResultsView = () => {
                                 <div className="flex-1 overflow-y-auto space-y-6">
                                     <div className="space-y-4">
                                         
-                                        {/* Exam Dropdown Removed from here and moved to main view */}
-
                                         <div className="grid grid-cols-2 gap-3">
                                             <div className="space-y-2">
                                                 <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Sort</label>

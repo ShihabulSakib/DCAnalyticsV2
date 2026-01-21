@@ -24,13 +24,25 @@ Before running any script, ensure your environment is set up:
 ## 🛠 Script Usage & Use Cases
 
 ### 1. Result Scraper (`main.py`)
-**Primary tool for fetching exam results.** It logins, fetches the exam list, downloads PDFs, parses them, and saves everything to the database.
+**Primary tool for fetching exam results.** It logins, fetches available sessions and groups, allows interactive selection, downloads PDFs, parses them, and saves everything to the database.
+
+**New Feature:** Now fully dynamic! Instead of hardcoded session/faculty values, the scraper:
+1. Fetches all available sessions (shows latest 3)
+2. Fetches all available groups (Science, Humanities, Business Studies)
+3. Fetches exams based on your selections
+4. Downloads and parses results
 
 *   **Use Case A: Interactive Mode**
-    Run without arguments to select an exam and define a roll range interactively.
+    Run without arguments for the full interactive experience.
     ```bash
     python3 scraper/main.py
     ```
+    
+    You will be prompted to:
+    - Select a Group (e.g., HSC - Science)
+    - Select a Session (e.g., 2024-2025)
+    - Select an Exam (e.g., Class Test 1)
+    - Enter Roll Range (e.g., 1202425010001 to 1202425010100)
 
 ### 2. Image Scraper (`scrape_images.py`)
 **Fetches student profile photos** and uploads them to Cloudinary.
