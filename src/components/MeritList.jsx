@@ -24,7 +24,7 @@ const MeritList = ({ students, onStudentClick }) => {
 
     useEffect(() => {
         if (containerRef.current) {
-             setDimensions({
+            setDimensions({
                 width: containerRef.current.offsetWidth,
                 height: containerRef.current.offsetHeight
             });
@@ -47,9 +47,8 @@ const MeritList = ({ students, onStudentClick }) => {
         return (
             <div
                 style={style}
-                className={`flex items-center px-4 border-b border-zinc-100 dark:border-zinc-800 transition-colors cursor-pointer ${
-                    isEven ? 'bg-white dark:bg-zinc-900' : 'bg-zinc-50/50 dark:bg-zinc-900/50'
-                } hover:bg-indigo-50 dark:hover:bg-indigo-900/20`}
+                className={`flex items-center px-4 border-b border-zinc-100 dark:border-zinc-800 transition-colors cursor-pointer ${isEven ? 'bg-white dark:bg-zinc-900' : 'bg-zinc-50/50 dark:bg-zinc-900/50'
+                    } hover:bg-indigo-50 dark:hover:bg-indigo-900/20`}
                 onClick={() => onStudentClick(student)}
             >
                 {/* Rank */}

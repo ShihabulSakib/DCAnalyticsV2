@@ -173,7 +173,7 @@ def get_exams(request: Request, session: str = Query(None), group: str = Query(N
         query += " AND target_group = %s"
         params.append(group)
     
-    query += " ORDER BY id DESC"
+    query += " ORDER BY exam_id_text DESC"
     
     return execute_query(query, tuple(params) if params else None, fetch="all")
 

@@ -17,6 +17,7 @@ dist-ssr
 /.gemini
 /data 
 /docs
+/test
 /test materials  
 !.vscode/extensions.json
 .idea
