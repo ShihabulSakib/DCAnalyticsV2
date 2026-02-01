@@ -230,8 +230,21 @@ def get_student_image(roll: str, request: Request):
         # Fallback placeholder could be returned here if desired
         raise HTTPException(status_code=500, detail="Image proxy error")
 
-@app.get("/api/results/{roll}")
 
+def resolve_exam_id(exam_identifier):
+    """Resolve exam identifier (text or int) to internal integer ID."""
+    if not exam_identifier:
+        return None
+        
+    # First try to find by exam_id_text
+    row = execute_query("SELECT id FROM exams WHERE exam_id_text = %s", (str(exam_identifier),), fetch="one")
+    if row:
+        return row['id']
+    
+    # If not found, it might be the internal ID already
+    return exam_identifier
+
+@app.get("/api/results/{roll}")
 def get_student_result(roll: str, request: Request, exam_id: str = None, x_accessor_roll: str = Header(None)):
     """Get a student's result for a specific exam (or latest)."""
     student = execute_query('SELECT * FROM students WHERE roll = %s', (roll,), fetch="one")
@@ -240,8 +253,10 @@ def get_student_result(roll: str, request: Request, exam_id: str = None, x_acces
         raise HTTPException(status_code=404, detail="Student not found")
 
     if exam_id:
+        # Resolve potentially text ID to internal ID
+        internal_exam_id = resolve_exam_id(exam_id)
         result_query = 'SELECT * FROM results WHERE student_id = %s AND exam_id = %s'
-        result = execute_query(result_query, (student['id'], exam_id), fetch="one")
+        result = execute_query(result_query, (student['id'], internal_exam_id), fetch="one")
     else:
         result_query = 'SELECT * FROM results WHERE student_id = %s ORDER BY id DESC LIMIT 1'
         result = execute_query(result_query, (student['id'],), fetch="one")
@@ -484,3 +499,70 @@ def get_analytics(request: Request, exam_id: str = None):
         "gpa_by_group": gpa_by_group,
         "grade_distribution": grade_distribution
     }
+
+@app.post("/api/admin/refresh-cache")
+def refresh_json_cache(exam_id: int = None, current_user: str = Depends(get_current_admin)):
+    """
+    Regenerate JSON files for specified exam (or all recent exams if none specified).
+    This endpoint triggers the json_exporter to create fresh JSON files.
+    """
+    try:
+        import sys
+        from pathlib import Path
+        import subprocess
+        
+        # Path to the json_exporter script
+        project_root = Path(__file__).parent.parent
+        exporter_script = project_root / 'scraper' / 'json_exporter.py'
+        
+        if not exporter_script.exists():
+            raise HTTPException(status_code=500, detail=f"Exporter script not found at {exporter_script}")
+        
+        # Run the exporter script as a subprocess
+        # This is safer than importing it directly in the API process
+        venv_python = project_root / 'venv' / 'bin' / 'python'
+        python_cmd = str(venv_python) if venv_python.exists() else 'python3'
+        
+        if exam_id:
+            # For specific exam, we would need to modify the exporter to accept args
+            # For now, run full export and it will include this exam
+            result = subprocess.run(
+                [python_cmd, str(exporter_script)],
+                cwd=str(project_root),
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+        else:
+            # Full export
+            result = subprocess.run(
+                [python_cmd, str(exporter_script)],
+                cwd=str(project_root),
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+        
+        if result.returncode != 0:
+            print(f"Exporter stderr: {result.stderr}")
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Export failed: {result.stderr[:500]}"
+            )
+        
+        # Count how many files were generated
+        import re
+        export_count = len(re.findall(r'✅.*saved:', result.stdout))
+        
+        return {
+            "success": True,
+            "message": f"Cache refreshed successfully ({export_count} files generated)",
+            "output": result.stdout[:1000]  # First 1000 chars of output
+        }
+        
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=500, detail="Export timed out after 60 seconds")
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Cache refresh failed: {str(e)}")

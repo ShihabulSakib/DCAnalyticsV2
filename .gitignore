@@ -18,6 +18,8 @@ dist-ssr
 /data 
 /docs
 /test materials  
+/public/data
+/test
 !.vscode/extensions.json
 .idea
 .DS_Store

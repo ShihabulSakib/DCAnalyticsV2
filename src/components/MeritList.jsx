@@ -2,7 +2,7 @@ import React, { useRef, useState, useLayoutEffect, useEffect } from 'react';
 import { FixedSizeList as List } from 'react-window';
 import { Trophy, Medal } from 'lucide-react';
 
-const MeritList = ({ students, onStudentClick }) => {
+const MeritList = ({ students, onStudentClick, sortBy = 'gpa' }) => {
     const containerRef = useRef(null);
     const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
 
@@ -24,7 +24,7 @@ const MeritList = ({ students, onStudentClick }) => {
 
     useEffect(() => {
         if (containerRef.current) {
-             setDimensions({
+            setDimensions({
                 width: containerRef.current.offsetWidth,
                 height: containerRef.current.offsetHeight
             });
@@ -47,9 +47,8 @@ const MeritList = ({ students, onStudentClick }) => {
         return (
             <div
                 style={style}
-                className={`flex items-center px-4 border-b border-zinc-100 dark:border-zinc-800 transition-colors cursor-pointer ${
-                    isEven ? 'bg-white dark:bg-zinc-900' : 'bg-zinc-50/50 dark:bg-zinc-900/50'
-                } hover:bg-indigo-50 dark:hover:bg-indigo-900/20`}
+                className={`flex items-center px-4 border-b border-zinc-100 dark:border-zinc-800 transition-colors cursor-pointer ${isEven ? 'bg-white dark:bg-zinc-900' : 'bg-zinc-50/50 dark:bg-zinc-900/50'
+                    } hover:bg-indigo-50 dark:hover:bg-indigo-900/20`}
                 onClick={() => onStudentClick(student)}
             >
                 {/* Rank */}
@@ -69,9 +68,12 @@ const MeritList = ({ students, onStudentClick }) => {
                     </div>
                 </div>
 
-                {/* GPA */}
+                {/* GPA or Marks */}
                 <div className="w-16 text-right font-mono font-bold text-indigo-600 dark:text-indigo-400 text-sm md:text-base shrink-0">
-                    {student.gpa !== null && student.gpa !== undefined ? student.gpa : '-'}
+                    {sortBy === 'marks'
+                        ? (student.total_marks !== null ? student.total_marks : '-')
+                        : (student.gpa !== null ? student.gpa : '-')
+                    }
                 </div>
             </div>
         );
@@ -84,7 +86,7 @@ const MeritList = ({ students, onStudentClick }) => {
                 <div className="w-12 md:w-16 text-center shrink-0">Rank</div>
                 <div className="w-16 md:w-20 text-center shrink-0">Roll</div>
                 <div className="flex-1 px-3">Name</div>
-                <div className="w-16 text-right shrink-0">GPA</div>
+                <div className="w-16 text-right shrink-0">{sortBy === 'marks' ? 'Marks' : 'GPA'}</div>
             </div>
 
             {/* Virtualized List Container */}
