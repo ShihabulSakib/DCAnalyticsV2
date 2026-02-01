@@ -1,12 +1,37 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { X, Download, User, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchResult } from '../api';
 import dataLoader, { USE_JSON_DATA } from '../services/dataLoader';
+import { useActivityLogger } from '../hooks/useActivityLogger';
 
 const ResultModal = ({ student, examId, isOpen, onClose }) => {
     const [detailedData, setDetailedData] = useState(null);
     const [loading, setLoading] = useState(false);
+    const { logUserActivity } = useActivityLogger();
+
+    // Track if we've already logged this view to prevent duplicate logs
+    const loggedViewRef = useRef(null);
+
+    // Log activity when modal opens with a new student
+    useEffect(() => {
+        if (isOpen && student?.roll && examId) {
+            // Only log if we haven't logged this exact view yet
+            const viewKey = `${student.roll}-${examId}`;
+            if (loggedViewRef.current !== viewKey) {
+                loggedViewRef.current = viewKey;
+                logUserActivity('VIEW_RESULT', student.roll, {
+                    exam_id: examId,
+                    student_name: student.name
+                });
+            }
+        }
+
+        // Reset when modal closes
+        if (!isOpen) {
+            loggedViewRef.current = null;
+        }
+    }, [isOpen, student, examId, logUserActivity]);
 
     useEffect(() => {
         if (isOpen && student?.roll && examId) {

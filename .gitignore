@@ -16,7 +16,7 @@ dist-ssr
 .vscode/*
 /.gemini
 /data 
-/docs
+
 /test materials  
 /public/data
 /test

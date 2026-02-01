@@ -1,5 +1,6 @@
 
 import os
+import json
 import psycopg2
 
 from psycopg2.extras import RealDictCursor
@@ -9,6 +10,7 @@ from fastapi.security import OAuth2PasswordBearer
 from fastapi.responses import Response
 from dotenv import load_dotenv
 from pydantic import BaseModel
+from typing import Optional, Dict, Any
 import jwt
 import requests
 from datetime import datetime, timedelta
@@ -294,6 +296,16 @@ class AdminLogin(BaseModel):
 class StudentLogin(BaseModel):
     roll: str
 
+class LogActivityRequest(BaseModel):
+    """Request model for logging user activity."""
+    action: str  # VIEW_RESULT, COMPARE_RESULT, LOGIN, UPDATE_EXAM
+    target_roll: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+class ExamUpdateRequest(BaseModel):
+    """Request model for updating exam details."""
+    name: str
+
 @app.post("/api/login")
 
 def student_login(data: StudentLogin, request: Request):
@@ -566,3 +578,248 @@ def refresh_json_cache(exam_id: int = None, current_user: str = Depends(get_curr
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Cache refresh failed: {str(e)}")
+
+
+# =============================================================================
+# ACTIVITY LOGGING & ANALYTICS ENDPOINTS
+# =============================================================================
+
+@app.post("/api/log-activity")
+def log_activity(
+    data: LogActivityRequest,
+    request: Request,
+    x_user_roll: str = Header(None, alias="X-User-Roll"),
+    user_agent: str = Header(None, alias="User-Agent")
+):
+    """
+    Log user activity (viewing results, comparisons, etc.).
+    Requires X-User-Roll header identifying the logged-in user.
+    Silently succeeds if no user roll provided (won't disrupt UX).
+    """
+    actor_roll = x_user_roll
+    
+    # If no actor roll, still log but mark as anonymous
+    if not actor_roll:
+        actor_roll = "anonymous"
+    
+    # Detect device type from User-Agent
+    device_type = "desktop"  # default
+    if user_agent:
+        ua_lower = user_agent.lower()
+        if any(mobile in ua_lower for mobile in ['mobile', 'android', 'iphone', 'ipod', 'blackberry', 'windows phone']):
+            device_type = "mobile"
+        elif 'tablet' in ua_lower or 'ipad' in ua_lower:
+            device_type = "tablet"
+    
+    try:
+        query = '''
+            INSERT INTO access_logs 
+            (actor_roll, target_roll, action_type, metadata, ip_address, status, device_type, roll, action)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        '''
+        metadata_json = json.dumps(data.metadata) if data.metadata else None
+        
+        execute_query(query, (
+            actor_roll,
+            data.target_roll,
+            data.action,
+            metadata_json,
+            request.client.host,
+            "Success",
+            device_type,
+            data.target_roll,  # Legacy compatibility: roll column (can be null)
+            data.action  # Legacy compatibility: action column (can be null)
+        ))
+        
+        return {"success": True}
+    except Exception as e:
+        # Silent fail - don't disrupt user experience
+        print(f"Activity logging failed: {e}")
+        return {"success": True}  # Still return success to not alarm frontend
+
+
+@app.get("/api/admin/logs")
+def get_activity_logs(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=10, le=100),
+    action_filter: str = Query(None),
+    current_user: str = Depends(get_current_admin)
+):
+    """
+    Get paginated activity logs with enriched student data.
+    Returns actor and target details (name, image).
+    Admin-only endpoint.
+    """
+    offset = (page - 1) * page_size
+    
+    # Build WHERE clause
+    where_conditions = ["1=1"]
+    params = []
+    
+    if action_filter:
+        where_conditions.append("al.action_type = %s")
+        params.append(action_filter)
+    
+    where_clause = " AND ".join(where_conditions)
+    
+    # Main query with LEFT JOINs to get actor and target details
+    query = f'''
+        SELECT 
+            al.id,
+            al.timestamp,
+            al.action_type,
+            al.actor_roll,
+            al.target_roll,
+            al.metadata,
+            al.ip_address,
+            al.status,
+            al.device_type,
+            actor.name as actor_name,
+            actor.image_url as actor_image,
+            target.name as target_name,
+            target.image_url as target_image
+        FROM access_logs al
+        LEFT JOIN students actor ON al.actor_roll = CAST(actor.roll AS TEXT)
+        LEFT JOIN students target ON al.target_roll = CAST(target.roll AS TEXT)
+        WHERE {where_clause}
+        ORDER BY al.timestamp DESC
+        LIMIT %s OFFSET %s
+    '''
+    params.extend([page_size, offset])
+    
+    logs = execute_query(query, tuple(params), fetch="all")
+    
+    # Get total count for pagination
+    count_params = params[:-2] if params[:-2] else None
+    count_query = f"SELECT COUNT(*) as total FROM access_logs al WHERE {where_clause}"
+    total_result = execute_query(count_query, tuple(count_params) if count_params else None, fetch="one")
+    total = total_result['total'] if total_result else 0
+    
+    return {
+        "logs": logs,
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": (total + page_size - 1) // page_size if total > 0 else 0
+        }
+    }
+
+
+@app.put("/api/admin/exams/{exam_id}")
+def update_exam(
+    exam_id: int,
+    data: ExamUpdateRequest,
+    request: Request,
+    current_user: str = Depends(get_current_admin)
+):
+    """
+    Update exam name.
+    Admin-only endpoint.
+    """
+    # Check if exam exists
+    existing = execute_query("SELECT id FROM exams WHERE id = %s", (exam_id,), fetch="one")
+    if not existing:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    
+    # Update the exam name
+    query = "UPDATE exams SET name = %s WHERE id = %s"
+    execute_query(query, (data.name, exam_id))
+    
+    # Log this action
+    log_query = '''
+        INSERT INTO access_logs 
+        (actor_roll, action_type, metadata, ip_address, status, action)
+        VALUES (%s, %s, %s, %s, %s, %s)
+    '''
+    metadata = json.dumps({"exam_id": exam_id, "new_name": data.name})
+    try:
+        execute_query(log_query, (
+            current_user,
+            "UPDATE_EXAM",
+            metadata,
+            request.client.host,
+            "Success",
+            "Update Exam"
+        ))
+    except Exception as e:
+        print(f"Failed to log exam update: {e}")
+    
+    return {"success": True, "exam_id": exam_id}
+
+
+@app.get("/api/admin/students/filtered")
+def get_filtered_students(
+    session: str = Query(None),
+    group: str = Query(None),
+    section: str = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=10, le=200),
+    current_user: str = Depends(get_current_admin)
+):
+    """
+    Get server-side filtered student list with pagination.
+    Supports filtering by session, group, and section.
+    Admin-only endpoint.
+    """
+    offset = (page - 1) * page_size
+    
+    # Build query
+    where_conditions = ["1=1"]
+    params = []
+    
+    if session and session != "All":
+        where_conditions.append("session = %s")
+        params.append(session)
+    
+    if group and group != "All":
+        where_conditions.append("student_group = %s")
+        params.append(group)
+    
+    # Handle section filtering in SQL based on last 3 digits of roll
+    if section and section != "All":
+        # Map sections to roll number ranges
+        section_ranges = {
+            'A': (1, 150),
+            'B': (151, 300),
+            'C': (301, 450),
+            'D': (451, 600),
+            'E': (601, 750),
+            'F': (751, 9999)
+        }
+        if section in section_ranges:
+            start, end = section_ranges[section]
+            # Extract last 3 digits and check range
+            where_conditions.append("(CAST(roll AS TEXT) ~ '^[0-9]+$' AND (CAST(roll AS BIGINT) %% 1000) BETWEEN %s AND %s)")
+            params.extend([start, end])
+    
+    where_clause = " AND ".join(where_conditions)
+    
+    # Main query with pagination
+    query = f'''
+        SELECT * FROM students 
+        WHERE {where_clause}
+        ORDER BY roll
+        LIMIT %s OFFSET %s
+    '''
+    params.extend([page_size, offset])
+    
+    students = execute_query(query, tuple(params), fetch="all")
+    
+    # Get total count with same filters
+    count_query = f"SELECT COUNT(*) as total FROM students WHERE {where_clause}"
+    count_params = params[:-2] if len(params) > 2 else []
+    total_result = execute_query(count_query, tuple(count_params) if count_params else None, fetch="one")
+    total = total_result['total'] if total_result else 0
+    
+    return {
+        "students": students,
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": (total + page_size - 1) // page_size if total > 0 else 0
+        }
+    }
+
+
