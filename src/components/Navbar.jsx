@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Moon, Sun, GraduationCap } from 'lucide-react';
+import { Moon, Sun } from 'lucide-react';
 // eslint-disable-next-line no-unused-vars
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -62,7 +62,7 @@ const Navbar = ({ toggleTheme, isDark, exams = [], selectedExam, onExamChange })
         <div className="flex justify-between h-16">
           <div className="flex items-center gap-6">
             <div className="flex items-center">
-              <GraduationCap className="h-8 w-8 text-indigo-600 dark:text-indigo-400 mr-2" />
+              <img src="/file.svg" alt="DCAnalytics Logo" className="h-[60px] w-[60px] mr-2" />
               <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-400 dark:to-purple-400 font-display hidden md:block">
                 DCAnalytics
               </span>
@@ -130,8 +130,8 @@ const Navbar = ({ toggleTheme, isDark, exams = [], selectedExam, onExamChange })
                             (selected && selected.id === opt.id
                               ? 'bg-indigo-50 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-100'
                               : (idx === highlight
-                                  ? 'bg-indigo-50 dark:bg-gray-700 text-indigo-700 dark:text-gray-100'
-                                  : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700')
+                                ? 'bg-indigo-50 dark:bg-gray-700 text-indigo-700 dark:text-gray-100'
+                                : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700')
                             )
                           }
                         >

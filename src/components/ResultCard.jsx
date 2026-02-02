@@ -1,7 +1,7 @@
 
 import React from 'react';
 import LinePersonFilled from '../assets/LinePersonFilled.svg';
-import { GraduationCap, Award, BookOpen } from 'lucide-react';
+import { Award, BookOpen } from 'lucide-react';
 
 const ResultCard = ({ result, student }) => {
     return (

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { Menu, X, Sun, Moon, BarChart2, Shield, ArrowRightLeft, LogOut, Sparkles, GraduationCap } from 'lucide-react';
+import { Menu, X, Sun, Moon, BarChart2, Shield, ArrowRightLeft, LogOut, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import usePreferences from '../hooks/usePreferences';
 import { useAuth } from '../context/AuthContext';
@@ -51,7 +51,7 @@ const Layout = () => {
                         <Menu size={24} />
                     </button>
                     <Link to="/" className="flex items-center gap-2 text-xl font-display font-bold tracking-tight text-indigo-600 dark:text-indigo-400">
-                        <GraduationCap className="hidden md:block" size={28} />
+                        <img src="/file.svg" alt="DCAnalytics Logo" className="h-[60px] w-[60px]" />
                         DCAnalytics
                     </Link>
                 </div>
@@ -102,11 +102,6 @@ const Layout = () => {
                         <LogOut size={16} />
                         Logout
                     </button>
-                </div>
-
-                {/* Mobile Right Logo */}
-                <div className="md:hidden">
-                    <GraduationCap className="text-indigo-600 dark:text-indigo-400" size={28} />
                 </div>
             </nav>
 

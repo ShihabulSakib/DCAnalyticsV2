@@ -6,7 +6,7 @@ import TranscriptTable from './TranscriptTable';
 import AnalyticsCharts from './AnalyticsCharts';
 import MeritList from './MeritList';
 import Navbar from './Navbar';
-import { Search, GraduationCap, LogOut } from 'lucide-react';
+import { Search, LogOut } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 function Dashboard({ toggleTheme, isDark, currentUser, onLogout }) {
@@ -148,7 +148,7 @@ function Dashboard({ toggleTheme, isDark, currentUser, onLogout }) {
                             className={`p-3 rounded-xl transition-colors ${showAnalytics ? 'bg-indigo-600 text-white shadow-lg' : 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-200'}`}
                             title="Analytics Dashboard"
                         >
-                            <GraduationCap className="h-6 w-6" />
+                            <img src="/file.svg" alt="DCAnalytics Logo" className="h-[60px] w-[60px]" />
                         </button>
                         <div>
                             <h1 className="text-2xl font-bold font-display text-gray-900 dark:text-white">
