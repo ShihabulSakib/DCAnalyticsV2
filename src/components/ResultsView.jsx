@@ -9,6 +9,23 @@ import Dropdown from './Dropdown';
 import { fetchExams, fetchMeritList, fetchSessions } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
+import dataLoader, { USE_JSON_DATA } from '../services/dataLoader';
+
+const getSectionFromRoll = (roll) => {
+    try {
+        const rollStr = String(roll);
+        const last3 = parseInt(rollStr.slice(-3));
+        if (last3 >= 1 && last3 <= 150) return 'A';
+        if (last3 >= 151 && last3 <= 300) return 'B';
+        if (last3 >= 301 && last3 <= 450) return 'C';
+        if (last3 >= 451 && last3 <= 600) return 'D';
+        if (last3 >= 601 && last3 <= 750) return 'E';
+        if (last3 >= 751) return 'F';
+    } catch (e) {
+        return 'Unknown';
+    }
+    return 'Unknown';
+};
 
 const parseStudentRoll = (roll) => {
     const rollStr = String(roll);
@@ -24,18 +41,7 @@ const parseStudentRoll = (roll) => {
     else if (groupPart === '020') group = 'Business Studies';
     else if (groupPart === '030') group = 'Humanities';
 
-    let section = 'All';
-    try {
-        const last3 = parseInt(rollStr.slice(-3));
-        if (last3 >= 1 && last3 <= 150) section = 'A';
-        else if (last3 <= 300) section = 'B';
-        else if (last3 <= 450) section = 'C';
-        else if (last3 <= 600) section = 'D';
-        else if (last3 <= 750) section = 'E';
-        else if (last3 > 750) section = 'F';
-    } catch (e) {
-        section = 'All';
-    }
+    const section = getSectionFromRoll(roll);
 
     return { session, group, section };
 };
@@ -55,10 +61,24 @@ const ResultsView = () => {
     const [selectedExam, setSelectedExam] = useState(null);
 
     // Active Filters
-    const [selectedSession, setSelectedSession] = useState('All');
-    const [selectedGroup, setSelectedGroup] = useState('All');
+    // Active Filters with Lazy Initialization based on User
+    const [selectedSession, setSelectedSession] = useState(() => {
+        if (user && user.roll) {
+            return parseStudentRoll(user.roll).session;
+        }
+        return 'All';
+    });
+
+    const [selectedGroup, setSelectedGroup] = useState(() => {
+        if (user && user.roll) {
+            return parseStudentRoll(user.roll).group;
+        }
+        return 'All';
+    });
+
     const [sortBy, setSortBy] = useState('gpa');
-    const [selectedSection, setSelectedSection] = useState('All');
+
+    const [selectedSection, setSelectedSection] = useState('All'); // Always default to All per request
 
     // Temporary Filters (for Mobile Menu)
     const [tempFilters, setTempFilters] = useState({
@@ -74,6 +94,15 @@ const ResultsView = () => {
     // Mobile Menu State
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [showDiscoveryHint, setShowDiscoveryHint] = useState(false);
+    const [isMobile, setIsMobile] = useState(false);
+
+    // Detect mobile viewport
+    useEffect(() => {
+        const checkMobile = () => setIsMobile(window.matchMedia('(max-width: 767px)').matches);
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
+    }, []);
 
     // 1. Initial Load: Sessions & Admin Defaults
     useEffect(() => {
@@ -97,6 +126,7 @@ const ResultsView = () => {
         }
     }, [user]);
 
+
     // 3. Hints Logic
     useEffect(() => {
         if (menuHintDismissed) {
@@ -115,7 +145,10 @@ const ResultsView = () => {
 
     // 4. Fetch Exams when Session or Group changes
     useEffect(() => {
-        loadExams();
+        console.log('Fetching exams for session:', selectedSession, 'and group:', selectedGroup);
+        if (selectedSession && selectedGroup) {
+            loadExams(selectedSession, selectedGroup);
+        }
     }, [selectedSession, selectedGroup]);
 
     // 5. Fetch Merit List when Exam or Filters change
@@ -148,11 +181,15 @@ const ResultsView = () => {
         }
     };
 
-    const loadExams = async () => {
-        // We do NOT set main loading=true here to prevent full screen skeleton flicker
-        // when just changing filters.
+    const loadExams = async (session, group) => {
+        setLoading(true);
         try {
-            const response = await fetchExams(selectedSession, selectedGroup);
+            // Use passed arguments or fallback to state (though args should always be passed now)
+            const currentSession = session || selectedSession;
+            const currentGroup = group || selectedGroup;
+
+            console.log(`[ResultsView] Fetching exams for Session: ${currentSession}, Group: ${currentGroup}`);
+            const response = await fetchExams(currentSession, currentGroup);
             const examsList = response.data;
 
             if (Array.isArray(examsList)) {
@@ -162,9 +199,10 @@ const ResultsView = () => {
                 // 1. If currently selected exam exists in new list, keep it.
                 // 2. Else, select the latest one from the new list.
                 if (examsList.length > 0) {
-                    const currentExists = examsList.find(e => e.id === selectedExam);
+                    const currentExists = examsList.find(e => e.exam_id_text === selectedExam);
                     if (!currentExists) {
-                        setSelectedExam(examsList[0].id);
+                        setSelectedExam(examsList[0].exam_id_text);
+
                     }
                 } else {
                     setSelectedExam(null);
@@ -176,6 +214,8 @@ const ResultsView = () => {
         } catch (err) {
             console.error('Failed to load exams:', err);
             setExams([]);
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -183,16 +223,90 @@ const ResultsView = () => {
     const loadMeritList = async () => {
         if (!selectedExam) return;
         setLoading(true);
+        setError('');
+
         try {
-            const response = await fetchMeritList(sortBy, selectedSection, selectedExam, selectedSession, selectedGroup);
-            setStudents(response.data);
-            setError('');
+            // Use JSON data loader if enabled
+            if (USE_JSON_DATA) {
+                console.log(`[ResultsView] Loading merit list via JSON for exam ${selectedExam}`);
+                const meritData = await dataLoader.loadMeritList(selectedExam);
+
+                // Transform JSON format to component format
+                let transformedStudents = meritData.students.map(s => ({
+                    position: s.pos,
+                    roll: s.id,
+                    name: s.n,
+                    gpa: s.gpa,
+                    total_marks: s.tot,
+                    status: s.st,
+                    photo_url: `/api/student-image/${s.id}`,
+                    transcript_url: s.tl,
+                    section: getSectionFromRoll(s.id),
+                    group: s.g,
+                    session: s.s
+                }));
+
+                // Apply client-side filters
+                transformedStudents = filterAndSortStudents(transformedStudents, {
+                    session: selectedSession,
+                    group: selectedGroup,
+                    section: selectedSection,
+                    sortBy
+                });
+
+                setStudents(transformedStudents);
+                setError('');
+            } else {
+                // Fallback to API
+                console.log('[ResultsView] Using API fallback');
+                const response = await fetchMeritList(sortBy, selectedSection, selectedExam, selectedSession, selectedGroup);
+                setStudents(response.data);
+                setError('');
+            }
         } catch (err) {
-            console.error('Failed to load merit list:', err);
-            setError('Failed to load results.');
+            console.error('Failed to load from JSON, trying API fallback:', err);
+
+            // Fallback to API if JSON fails
+            try {
+                const response = await fetchMeritList(sortBy, selectedSection, selectedExam, selectedSession, selectedGroup);
+                setStudents(response.data);
+                setError('');
+            } catch (apiErr) {
+                console.error('API fallback also failed:', apiErr);
+                setError('Failed to load results.');
+            }
         } finally {
             setLoading(false);
         }
+    };
+
+    /**
+     * Client-side filter and sort function (fast, no network calls)
+     */
+    const filterAndSortStudents = (students, filters) => {
+        let filtered = [...students];
+
+        if (filters.session && filters.session !== 'All') {
+            filtered = filtered.filter(s => s.session === filters.session);
+        }
+
+        if (filters.group && filters.group !== 'All') {
+            filtered = filtered.filter(s => s.group === filters.group);
+        }
+
+        if (filters.section && filters.section !== 'All') {
+            filtered = filtered.filter(s => s.section === filters.section);
+        }
+
+        // Sort
+        if (filters.sortBy === 'gpa') {
+            filtered.sort((a, b) => (b.gpa || 0) - (a.gpa || 0) || (b.total_marks || 0) - (a.total_marks || 0));
+        } else {
+            filtered.sort((a, b) => (b.total_marks || 0) - (a.total_marks || 0) || (b.gpa || 0) - (a.gpa || 0));
+        }
+
+        // Recalculate positions after filtering
+        return filtered.map((s, idx) => ({ ...s, position: idx + 1 }));
     };
 
     const handleOpenMenu = () => {
@@ -232,7 +346,7 @@ const ResultsView = () => {
     }
 
     // Transform Data for Dropdowns
-    const examOptions = exams.map(e => ({ value: e.id, label: e.name }));
+    const examOptions = exams.map(e => ({ value: e.exam_id_text, label: e.name }));
     const sortOptions = [
         { value: 'gpa', label: 'Rank by GPA' },
         { value: 'marks', label: 'Rank by Marks' }
@@ -302,13 +416,15 @@ const ResultsView = () => {
                     </button>
                     <button
                         onClick={() => setViewMode('analytics')}
-                        className={`hidden md:inline-block px-3 md:px-4 py-1.5 rounded-md text-sm font-medium transition-all ${viewMode === 'analytics' ? 'bg-white dark:bg-zinc-800 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
+                        className={`px-3 md:px-4 py-1.5 rounded-md text-sm font-medium transition-all ${viewMode === 'analytics' ? 'bg-white dark:bg-zinc-800 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
+
                     >
                         Analytics
                     </button>
                 </div>
 
-                {/* Search Bar & Mobile Filter */}
+                {/* Search Bar & Mobile Filter - Only in Results mode */}
+                {viewMode === 'results' && (
                 <div className="flex gap-2 w-full md:w-auto md:flex-1 md:max-w-md">
                     <div className="relative flex-1">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
@@ -357,9 +473,10 @@ const ResultsView = () => {
                         </AnimatePresence>
                     </div>
                 </div>
+                )}
 
                 {/* Desktop Filters (Visible only on Desktop) */}
-                <DesktopFilters />
+                {viewMode === 'results' && <DesktopFilters />}
             </div>
 
             {/* Mobile Filter Modal */}
@@ -451,35 +568,59 @@ const ResultsView = () => {
                 )}
 
                 {/* Mobile Exam Select (Visible on Mobile only, at the top of Result tab) */}
-                <div className="md:hidden p-3 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
-                    <select
-                        value={selectedExam || ''}
-                        onChange={(e) => setSelectedExam(e.target.value)}
-                        className="w-full px-3 py-2 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-500/20 outline-none shadow-sm"
-                    >
-                        {exams.map(exam => <option key={exam.id} value={exam.id}>{exam.name}</option>)}
-                    </select>
-                </div>
-
-                {viewMode === 'results' ? (
-                    filteredStudents.length > 0 ? (
-                        <div className="flex-1 min-h-0">
-                            <MeritList
-                                students={filteredStudents}
-                                onStudentClick={setSelectedStudent}
-                            />
-                        </div>
-                    ) : (
-                        <div className="p-8 text-center text-zinc-500 flex flex-col items-center justify-center h-full">
-                            <p>No results found for these filters.</p>
-                        </div>
-                    )
-                ) : (
-                    <AnalyticsView examId={selectedExam} />
+                {viewMode === 'results' && (
+                    <div className="md:hidden p-3 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
+                        <select
+                            value={selectedExam || ''}
+                            onChange={(e) => setSelectedExam(e.target.value)}
+                            className="w-full px-3 py-2 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-500/20 outline-none shadow-sm"
+                        >
+                            {exams.map(exam => <option key={exam.id} value={exam.exam_id_text}>{exam.name}</option>)}
+                        </select>
+                    </div>
                 )}
+
+                {/* Animated View Transition */}
+                <AnimatePresence mode="wait">
+                    {viewMode === 'results' ? (
+                        <motion.div
+                            key="results"
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            transition={{ duration: 0.2, ease: 'easeOut' }}
+                            className="flex-1 min-h-0 flex flex-col"
+                        >
+                            {filteredStudents.length > 0 ? (
+                                <div className="flex-1 min-h-0">
+                                    <MeritList
+                                        students={filteredStudents}
+                                        onStudentClick={setSelectedStudent}
+                                        sortBy={sortBy}
+                                    />
+                                </div>
+                            ) : (
+                                <div className="p-8 text-center text-zinc-500 flex flex-col items-center justify-center h-full">
+                                    <p>No results found for these filters.</p>
+                                </div>
+                            )}
+                        </motion.div>
+                    ) : (
+                        <motion.div
+                            key="analytics"
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            transition={{ duration: 0.2, ease: 'easeOut' }}
+                            className="flex-1 min-h-0"
+                        >
+                            <AnalyticsView examId={selectedExam} />
+                        </motion.div>
+                    )}
+                </AnimatePresence>
             </div>
 
-            <ResultModal student={selectedStudent} isOpen={!!selectedStudent} onClose={() => setSelectedStudent(null)} />
+            <ResultModal student={selectedStudent} examId={selectedExam} isOpen={!!selectedStudent} onClose={() => setSelectedStudent(null)} />
         </div>
     );
 };

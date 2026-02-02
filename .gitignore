@@ -15,10 +15,11 @@ dist-ssr
 # Editor directories and files
 .vscode/*
 /.gemini
-/data 
-/docs
-/test
+/data
+
 /test materials  
+/public/data
+/test
 !.vscode/extensions.json
 .idea
 .DS_Store

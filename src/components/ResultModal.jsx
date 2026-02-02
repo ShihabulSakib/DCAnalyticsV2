@@ -1,21 +1,83 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { X, Download, User, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchResult } from '../api';
+import dataLoader, { USE_JSON_DATA } from '../services/dataLoader';
+import { useActivityLogger } from '../hooks/useActivityLogger';
 
-const ResultModal = ({ student, isOpen, onClose }) => {
+const ResultModal = ({ student, examId, isOpen, onClose }) => {
     const [detailedData, setDetailedData] = useState(null);
     const [loading, setLoading] = useState(false);
+    const { logUserActivity } = useActivityLogger();
+
+    // Track if we've already logged this view to prevent duplicate logs
+    const loggedViewRef = useRef(null);
+
+    // Log activity when modal opens with a new student
+    useEffect(() => {
+        if (isOpen && student?.roll && examId) {
+            // Only log if we haven't logged this exact view yet
+            const viewKey = `${student.roll}-${examId}`;
+            if (loggedViewRef.current !== viewKey) {
+                loggedViewRef.current = viewKey;
+                logUserActivity('VIEW_RESULT', student.roll, {
+                    exam_id: examId,
+                    student_name: student.name
+                });
+            }
+        }
+
+        // Reset when modal closes
+        if (!isOpen) {
+            loggedViewRef.current = null;
+        }
+    }, [isOpen, student, examId, logUserActivity]);
 
     useEffect(() => {
-        if (isOpen && student?.roll) {
+        if (isOpen && student?.roll && examId) {
             const loadDetails = async () => {
                 setLoading(true);
                 try {
-                    const response = await fetchResult(student.roll);
-                    setDetailedData(response.data);
+                    // Try loading from JSON first if enabled
+                    if (USE_JSON_DATA) {
+                        console.log(`[ResultModal] Loading marks from JSON for exam ${examId}`);
+                        // Load only marks from JSON. Student info is already in props.
+                        const marksData = await dataLoader.loadMarks(examId);
+
+                        // Extract marks for this student
+                        const studentMarks = dataLoader.getStudentMarks(marksData, student.roll);
+
+                        // Transform to match expected format
+                        const subjects = studentMarks ? studentMarks.map(mark => ({
+                            subject_name: mark.subject,
+                            total: mark.total,
+                            grade: mark.grade,
+                            gp: mark.gp !== null ? Number(mark.gp).toFixed(2) : '-'
+                        })) : [];
+
+                        setDetailedData({
+                            student: student, // Use passed student prop
+                            result: {
+                                ...student,
+                                original_pdf_url: student.transcript_url // Map from prop
+                            },
+                            subjects: subjects
+                        });
+                    } else {
+                        // Fallback to API
+                        console.log('[ResultModal] Using API fallback');
+                        const response = await fetchResult(student.roll, examId);
+                        setDetailedData(response.data);
+                    }
                 } catch (error) {
-                    console.error("Failed to load details", error);
+                    console.error("Failed to load details, trying API fallback:", error);
+                    // Fallback to API
+                    try {
+                        const response = await fetchResult(student.roll, examId);
+                        setDetailedData(response.data);
+                    } catch (apiError) {
+                        console.error("API fallback failed:", apiError);
+                    }
                 } finally {
                     setLoading(false);
                 }
@@ -24,7 +86,7 @@ const ResultModal = ({ student, isOpen, onClose }) => {
         } else {
             setDetailedData(null);
         }
-    }, [isOpen, student]);
+    }, [isOpen, student, examId]);
 
     if (!isOpen || !student) return null;
 
