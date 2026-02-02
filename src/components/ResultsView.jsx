@@ -94,6 +94,15 @@ const ResultsView = () => {
     // Mobile Menu State
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [showDiscoveryHint, setShowDiscoveryHint] = useState(false);
+    const [isMobile, setIsMobile] = useState(false);
+
+    // Detect mobile viewport
+    useEffect(() => {
+        const checkMobile = () => setIsMobile(window.matchMedia('(max-width: 767px)').matches);
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
+    }, []);
 
     // 1. Initial Load: Sessions & Admin Defaults
     useEffect(() => {
@@ -155,8 +164,7 @@ const ResultsView = () => {
     };
 
     const loadExams = async (session, group) => {
-        // We do NOT set main loading=true here to prevent full screen skeleton flicker
-        // when just changing filters.
+        setLoading(true);
         try {
             // Use passed arguments or fallback to state (though args should always be passed now)
             const currentSession = session || selectedSession;
@@ -187,6 +195,8 @@ const ResultsView = () => {
         } catch (err) {
             console.error('Failed to load exams:', err);
             setExams([]);
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -386,13 +396,14 @@ const ResultsView = () => {
                     </button>
                     <button
                         onClick={() => setViewMode('analytics')}
-                        className={`hidden md:inline-block px-3 md:px-4 py-1.5 rounded-md text-sm font-medium transition-all ${viewMode === 'analytics' ? 'bg-white dark:bg-zinc-800 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
+                        className={`px-3 md:px-4 py-1.5 rounded-md text-sm font-medium transition-all ${viewMode === 'analytics' ? 'bg-white dark:bg-zinc-800 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
                     >
                         Analytics
                     </button>
                 </div>
 
-                {/* Search Bar & Mobile Filter */}
+                {/* Search Bar & Mobile Filter - Only in Results mode */}
+                {viewMode === 'results' && (
                 <div className="flex gap-2 w-full md:w-auto md:flex-1 md:max-w-md">
                     <div className="relative flex-1">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
@@ -441,9 +452,10 @@ const ResultsView = () => {
                         </AnimatePresence>
                     </div>
                 </div>
+                )}
 
                 {/* Desktop Filters (Visible only on Desktop) */}
-                <DesktopFilters />
+                {viewMode === 'results' && <DesktopFilters />}
             </div>
 
             {/* Mobile Filter Modal */}
@@ -535,33 +547,56 @@ const ResultsView = () => {
                 )}
 
                 {/* Mobile Exam Select (Visible on Mobile only, at the top of Result tab) */}
-                <div className="md:hidden p-3 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
-                    <select
-                        value={selectedExam || ''}
-                        onChange={(e) => setSelectedExam(e.target.value)}
-                        className="w-full px-3 py-2 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-500/20 outline-none shadow-sm"
-                    >
-                        {exams.map(exam => <option key={exam.id} value={exam.exam_id_text}>{exam.name}</option>)}
-                    </select>
-                </div>
-
-                {viewMode === 'results' ? (
-                    filteredStudents.length > 0 ? (
-                        <div className="flex-1 min-h-0">
-                            <MeritList
-                                students={filteredStudents}
-                                onStudentClick={setSelectedStudent}
-                                sortBy={sortBy}
-                            />
-                        </div>
-                    ) : (
-                        <div className="p-8 text-center text-zinc-500 flex flex-col items-center justify-center h-full">
-                            <p>No results found for these filters.</p>
-                        </div>
-                    )
-                ) : (
-                    <AnalyticsView examId={selectedExam} />
+                {viewMode === 'results' && (
+                    <div className="md:hidden p-3 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
+                        <select
+                            value={selectedExam || ''}
+                            onChange={(e) => setSelectedExam(e.target.value)}
+                            className="w-full px-3 py-2 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-500/20 outline-none shadow-sm"
+                        >
+                            {exams.map(exam => <option key={exam.id} value={exam.exam_id_text}>{exam.name}</option>)}
+                        </select>
+                    </div>
                 )}
+
+                {/* Animated View Transition */}
+                <AnimatePresence mode="wait">
+                    {viewMode === 'results' ? (
+                        <motion.div
+                            key="results"
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            transition={{ duration: 0.2, ease: 'easeOut' }}
+                            className="flex-1 min-h-0 flex flex-col"
+                        >
+                            {filteredStudents.length > 0 ? (
+                                <div className="flex-1 min-h-0">
+                                    <MeritList
+                                        students={filteredStudents}
+                                        onStudentClick={setSelectedStudent}
+                                        sortBy={sortBy}
+                                    />
+                                </div>
+                            ) : (
+                                <div className="p-8 text-center text-zinc-500 flex flex-col items-center justify-center h-full">
+                                    <p>No results found for these filters.</p>
+                                </div>
+                            )}
+                        </motion.div>
+                    ) : (
+                        <motion.div
+                            key="analytics"
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            transition={{ duration: 0.2, ease: 'easeOut' }}
+                            className="flex-1 min-h-0"
+                        >
+                            <AnalyticsView examId={selectedExam} />
+                        </motion.div>
+                    )}
+                </AnimatePresence>
             </div>
 
             <ResultModal student={selectedStudent} examId={selectedExam} isOpen={!!selectedStudent} onClose={() => setSelectedStudent(null)} />

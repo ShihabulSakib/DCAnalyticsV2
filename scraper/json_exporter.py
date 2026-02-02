@@ -247,6 +247,131 @@ class JsonExporter:
         print(f"   📚 Groups: {', '.join(groups_subjects.keys())}")
         return path
 
+    def export_analytics(self, exam_id_text):
+        """
+        Generates the optimized analytics JSON (Micro-JSON format).
+        
+        Schema:
+        {
+            "meta": { "name": "HSC 2024", "total": 1200 },
+            "subjects": { "101": "Bangla", "102": "English" },
+            "data": [
+                ["A", "Science", { "101": 5.0, "102": 4.0 }],
+                ["B", "Humanities", { "101": 3.5, "102": 0.0 }]
+            ]
+        }
+        """
+        print(f"Exporting Analytics for Exam ID: {exam_id_text}...")
+        
+        exam = self.fetch_exam_details(exam_id_text)
+        if not exam:
+            print(f"Exam {exam_id_text} not found.")
+            return
+        
+        exam_int_id = exam['id']
+        
+        # Create analytics output directory
+        analytics_dir = os.path.join(OUTPUT_DIR, 'analytics')
+        os.makedirs(analytics_dir, exist_ok=True)
+        
+        # Fetch all student data with marks for analytics
+        with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Get all subjects for this exam with their IDs
+            cur.execute("""
+                SELECT DISTINCT s.id as subject_id, s.name as subject_name
+                FROM subjects s
+                JOIN student_marks sm ON s.id = sm.subject_id
+                JOIN results r ON sm.result_id = r.id
+                WHERE r.exam_id = %s
+                ORDER BY s.id
+            """, (exam_int_id,))
+            subjects_rows = cur.fetchall()
+            
+            # Build subject ID -> Name map (using string IDs for JSON keys)
+            subjects_map = {str(row['subject_id']): row['subject_name'] for row in subjects_rows}
+            
+            # Fetch all student results with their marks
+            cur.execute("""
+                SELECT 
+                    s.roll,
+                    s.student_group,
+                    subj.id as subject_id,
+                    sm.gp
+                FROM student_marks sm
+                JOIN results r ON sm.result_id = r.id
+                JOIN students s ON r.student_id = s.id
+                JOIN subjects subj ON sm.subject_id = subj.id
+                WHERE r.exam_id = %s
+                ORDER BY s.roll, subj.id
+            """, (exam_int_id,))
+            
+            marks_rows = cur.fetchall()
+        
+        if not marks_rows:
+            print(f"⚠️  No marks data found for exam {exam_id_text}")
+            return
+        
+        # Helper to derive section from roll number
+        def get_section(roll):
+            try:
+                roll_str = str(roll)
+                last3 = int(roll_str[-3:])
+                if 1 <= last3 <= 150: return 'A'
+                if 151 <= last3 <= 300: return 'B'
+                if 301 <= last3 <= 450: return 'C'
+                if 451 <= last3 <= 600: return 'D'
+                if 601 <= last3 <= 750: return 'E'
+                if last3 >= 751: return 'F'
+            except:
+                pass
+            return 'X'
+        
+        # Build student data structure: { roll: { subject_id: gp } }
+        students_data = defaultdict(lambda: {'group': 'Unknown', 'marks': {}})
+        
+        for row in marks_rows:
+            roll = row['roll']
+            students_data[roll]['group'] = row['student_group'] or 'Unknown'
+            students_data[roll]['marks'][str(row['subject_id'])] = row['gp'] or 0.0
+        
+        # Build the data array: [section, group, {subject_id: gp}]
+        data_array = []
+        for roll, student_info in students_data.items():
+            section = get_section(roll)
+            group = student_info['group']
+            marks = student_info['marks']
+            data_array.append([section, group, marks])
+        
+        # Build output JSON
+        output_data = {
+            "meta": {
+                "name": exam['name'],
+                "total": len(students_data)
+            },
+            "subjects": subjects_map,
+            "data": data_array
+        }
+        
+        # Save JSON
+        filename = f"exam_{exam_id_text}.json"
+        path = os.path.join(analytics_dir, filename)
+        
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(output_data, f, separators=(',', ':'), ensure_ascii=False)
+        
+        # Save Gzipped JSON
+        with gzip.open(path + '.gz', 'wt', encoding='utf-8') as f:
+            json.dump(output_data, f, separators=(',', ':'), ensure_ascii=False)
+        
+        file_size = os.path.getsize(path)
+        gz_size = os.path.getsize(path + '.gz')
+        compression_ratio = (1 - gz_size/file_size) * 100 if file_size > 0 else 0
+        
+        print(f"✅ Analytics saved: {filename}")
+        print(f"   📊 {len(students_data)} students | {len(subjects_map)} subjects")
+        print(f"   💾 {file_size} bytes | {gz_size} bytes gzipped ({compression_ratio:.1f}% compression)")
+        return path
+
     def close(self):
         self.conn.close()
 
@@ -267,6 +392,7 @@ if __name__ == "__main__":
             print(f"📝 Processing: {name} (ID: {exam_id_text})")
             exporter.export_merit_list(exam_id_text)
             exporter.export_marksheet(exam_id_text)
+            exporter.export_analytics(exam_id_text)
             print()
     
     exporter.close()

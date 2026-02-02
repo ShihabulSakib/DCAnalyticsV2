@@ -307,25 +307,157 @@ class ExamUpdateRequest(BaseModel):
     name: str
 
 @app.post("/api/login")
-
-def student_login(data: StudentLogin, request: Request):
-    """Log in a student and log the access."""
+def student_login(data: StudentLogin, request: Request, user_agent: str = Header(None, alias="User-Agent")):
+    """Log in a student and log the access with enhanced telemetry."""
     student = execute_query('SELECT * FROM students WHERE roll = %s', (data.roll,), fetch="one")
+    
+    # Detect device type from User-Agent
+    device_type = "desktop"
+    browser = "Unknown"
+    if user_agent:
+        ua_lower = user_agent.lower()
+        if any(mobile in ua_lower for mobile in ['mobile', 'android', 'iphone', 'ipod', 'blackberry', 'windows phone']):
+            device_type = "mobile"
+        elif 'tablet' in ua_lower or 'ipad' in ua_lower:
+            device_type = "tablet"
+        # Extract browser name
+        if 'chrome' in ua_lower and 'edg' not in ua_lower:
+            browser = "Chrome"
+        elif 'firefox' in ua_lower:
+            browser = "Firefox"
+        elif 'safari' in ua_lower and 'chrome' not in ua_lower:
+            browser = "Safari"
+        elif 'edg' in ua_lower:
+            browser = "Edge"
+        elif 'opera' in ua_lower or 'opr' in ua_lower:
+            browser = "Opera"
+    
+    metadata = json.dumps({"device": device_type, "browser": browser})
+    
     if student:
-        log_access(data.roll, "User Login", request.client.host, "Success", accessor=data.roll)
+        # Enhanced logging with all required columns for admin panel display
+        try:
+            query = '''
+                INSERT INTO access_logs 
+                (actor_roll, target_roll, action_type, metadata, ip_address, status, device_type, roll, action)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            '''
+            execute_query(query, (
+                data.roll,      # actor_roll
+                data.roll,      # target_roll
+                "LOGIN",        # action_type
+                metadata,       # metadata JSON
+                request.client.host,
+                "Success",
+                device_type,
+                data.roll,      # legacy roll column
+                "User Login"    # legacy action column
+            ))
+        except Exception as e:
+            print(f"Login logging failed: {e}")
         return {"success": True, "student": student}
     else:
-        log_access(data.roll, "User Login", request.client.host, "Failed: Invalid Roll", accessor=data.roll)
+        # Log failed attempt
+        try:
+            query = '''
+                INSERT INTO access_logs 
+                (actor_roll, target_roll, action_type, metadata, ip_address, status, device_type, roll, action)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            '''
+            execute_query(query, (
+                data.roll,
+                data.roll,
+                "LOGIN",
+                metadata,
+                request.client.host,
+                "Failed: Invalid Roll",
+                device_type,
+                data.roll,
+                "User Login"
+            ))
+        except Exception as e:
+            print(f"Login logging failed: {e}")
         raise HTTPException(status_code=404, detail="Student not found")
 
 @app.post("/api/admin/login")
-def admin_login(data: AdminLogin):
-    # In production, check against hashed password in DB
-    # For now, simple env check but using JWT
+def admin_login(data: AdminLogin, request: Request, user_agent: str = Header(None, alias="User-Agent")):
+    """Admin login with enhanced logging."""
+    # Detect device type from User-Agent
+    device_type = "desktop"
+    browser = "Unknown"
+    if user_agent:
+        ua_lower = user_agent.lower()
+        if any(mobile in ua_lower for mobile in ['mobile', 'android', 'iphone', 'ipod', 'blackberry', 'windows phone']):
+            device_type = "mobile"
+        elif 'tablet' in ua_lower or 'ipad' in ua_lower:
+            device_type = "tablet"
+        if 'chrome' in ua_lower and 'edg' not in ua_lower:
+            browser = "Chrome"
+        elif 'firefox' in ua_lower:
+            browser = "Firefox"
+        elif 'safari' in ua_lower and 'chrome' not in ua_lower:
+            browser = "Safari"
+        elif 'edg' in ua_lower:
+            browser = "Edge"
+        elif 'opera' in ua_lower or 'opr' in ua_lower:
+            browser = "Opera"
+    
     env_pass = os.getenv("ADMIN_PASSWORD", "AdminSecretPass2026")
+    
     if data.password == env_pass:
+        # Log successful admin login
+        metadata = json.dumps({
+            "device": device_type,
+            "browser": browser,
+            "ip": request.client.host,
+            "source": "admin_panel"
+        })
+        try:
+            query = '''
+                INSERT INTO access_logs 
+                (actor_roll, action_type, metadata, ip_address, status, device_type, action)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            '''
+            execute_query(query, (
+                "ADMIN",        # actor_roll
+                "LOGIN",        # action_type
+                metadata,
+                request.client.host,
+                "Success",
+                device_type,
+                "Admin Login"
+            ))
+        except Exception as e:
+            print(f"Admin login logging failed: {e}")
+        
         access_token = create_access_token(data={"sub": "admin"})
         return {"access_token": access_token, "token_type": "bearer"}
+    
+    # Log failed admin login attempt
+    try:
+        metadata = json.dumps({
+            "device": device_type,
+            "browser": browser,
+            "ip": request.client.host,
+            "source": "admin_panel"
+        })
+        query = '''
+            INSERT INTO access_logs 
+            (actor_roll, action_type, metadata, ip_address, status, device_type, action)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        '''
+        execute_query(query, (
+            "ADMIN",
+            "LOGIN",
+            metadata,
+            request.client.host,
+            "Failed: Invalid Password",
+            device_type,
+            "Admin Login"
+        ))
+    except Exception as e:
+        print(f"Admin login logging failed: {e}")
+    
     raise HTTPException(status_code=401, detail="Invalid Password")
 
 @app.get("/api/admin/dashboard")
@@ -593,23 +725,46 @@ def log_activity(
 ):
     """
     Log user activity (viewing results, comparisons, etc.).
-    Requires X-User-Roll header identifying the logged-in user.
-    Silently succeeds if no user roll provided (won't disrupt UX).
+    Accepts X-User-Roll header - can be student roll, "ADMIN", "SYSTEM", or empty.
+    Silently succeeds if logging fails (won't disrupt UX).
     """
     actor_roll = x_user_roll
     
-    # If no actor roll, still log but mark as anonymous
+    # Accept ADMIN, SYSTEM, or student roll - if empty, mark as anonymous
     if not actor_roll:
         actor_roll = "anonymous"
+    # Valid special values that aren't student rolls
+    # No need to validate - just accept as-is (ADMIN, SYSTEM, student roll, anonymous)
     
     # Detect device type from User-Agent
     device_type = "desktop"  # default
+    browser = "Unknown"
     if user_agent:
         ua_lower = user_agent.lower()
         if any(mobile in ua_lower for mobile in ['mobile', 'android', 'iphone', 'ipod', 'blackberry', 'windows phone']):
             device_type = "mobile"
         elif 'tablet' in ua_lower or 'ipad' in ua_lower:
             device_type = "tablet"
+        # Extract browser name
+        if 'chrome' in ua_lower and 'edg' not in ua_lower:
+            browser = "Chrome"
+        elif 'firefox' in ua_lower:
+            browser = "Firefox"
+        elif 'safari' in ua_lower and 'chrome' not in ua_lower:
+            browser = "Safari"
+        elif 'edg' in ua_lower:
+            browser = "Edge"
+        elif 'opera' in ua_lower or 'opr' in ua_lower:
+            browser = "Opera"
+    
+    # Build enhanced metadata
+    enhanced_metadata = data.metadata.copy() if data.metadata else {}
+    enhanced_metadata["device"] = device_type
+    enhanced_metadata["browser"] = browser
+    # Add admin-specific metadata
+    if actor_roll == "ADMIN":
+        enhanced_metadata["ip"] = request.client.host
+        enhanced_metadata["source"] = "admin_panel"
     
     try:
         query = '''
@@ -617,7 +772,7 @@ def log_activity(
             (actor_roll, target_roll, action_type, metadata, ip_address, status, device_type, roll, action)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         '''
-        metadata_json = json.dumps(data.metadata) if data.metadata else None
+        metadata_json = json.dumps(enhanced_metadata)
         
         execute_query(query, (
             actor_roll,
@@ -648,6 +803,7 @@ def get_activity_logs(
     """
     Get paginated activity logs with enriched student data.
     Returns actor and target details (name, image).
+    For admin/system actors, returns static Admin info instead of student lookup.
     Admin-only endpoint.
     """
     offset = (page - 1) * page_size
@@ -663,6 +819,7 @@ def get_activity_logs(
     where_clause = " AND ".join(where_conditions)
     
     # Main query with LEFT JOINs to get actor and target details
+    # Note: LEFT JOIN will return NULL for non-student actor_rolls (ADMIN, SYSTEM, anonymous)
     query = f'''
         SELECT 
             al.id,
@@ -689,6 +846,28 @@ def get_activity_logs(
     
     logs = execute_query(query, tuple(params), fetch="all")
     
+    # Post-process logs to handle admin/system actors with static info
+    SPECIAL_ACTORS = {'ADMIN', 'SYSTEM', 'admin', 'system', 'anonymous'}
+    processed_logs = []
+    for log in logs:
+        log_dict = dict(log)
+        actor_roll = log_dict.get('actor_roll', '')
+        
+        # If actor is ADMIN/SYSTEM/anonymous and no student found, provide static info
+        if actor_roll in SPECIAL_ACTORS or (actor_roll and not log_dict.get('actor_name')):
+            if actor_roll.upper() == 'ADMIN':
+                log_dict['actor_name'] = 'Admin'
+                log_dict['actor_image'] = None  # Use default admin avatar on frontend
+            elif actor_roll.upper() == 'SYSTEM':
+                log_dict['actor_name'] = 'System'
+                log_dict['actor_image'] = None
+            elif actor_roll == 'anonymous':
+                log_dict['actor_name'] = 'Anonymous User'
+                log_dict['actor_image'] = None
+            # If it's a roll number that didn't match, keep actor_name as None
+        
+        processed_logs.append(log_dict)
+    
     # Get total count for pagination
     count_params = params[:-2] if params[:-2] else None
     count_query = f"SELECT COUNT(*) as total FROM access_logs al WHERE {where_clause}"
@@ -696,7 +875,7 @@ def get_activity_logs(
     total = total_result['total'] if total_result else 0
     
     return {
-        "logs": logs,
+        "logs": processed_logs,
         "pagination": {
             "page": page,
             "page_size": page_size,
