@@ -16,9 +16,10 @@ dist-ssr
 .vscode/*
 /.gemini
 /data
+/docs
+/.agent/rules
 
 /test materials  
-/public/data
 /test
 !.vscode/extensions.json
 .idea
