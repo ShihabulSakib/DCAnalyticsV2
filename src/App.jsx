@@ -14,9 +14,9 @@ const ProtectedRoute = lazy(() => import('./components/ProtectedRoute'));
 
 // Loading Fallback
 const PageLoader = () => (
-    <div className="h-screen w-full flex flex-col items-center justify-center gap-4 bg-zinc-50 dark:bg-zinc-950">
-        <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-zinc-500 dark:text-zinc-400 text-sm animate-pulse">Loading Application...</p>
+    <div className="h-screen w-full flex flex-col items-center justify-center gap-4 bg-surface-a0">
+        <div className="w-12 h-12 border-4 border-primary-a10 border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-surface-tonal-a30 text-sm animate-pulse">Loading Application...</p>
     </div>
 );
 

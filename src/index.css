@@ -2,6 +2,84 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  /* Base colors */
+  --clr-dark-a0: #121212;
+  --clr-light-a0: #e9edc9;
+
+  /* Theme primary colors */
+  --clr-primary-a0: #1648e6;
+  --clr-primary-a10: #1e40ca;
+  --clr-primary-a20: #2139ae;
+  --clr-primary-a30: #223193;
+  --clr-primary-a40: #212a79;
+  --clr-primary-a50: #1f2360;
+
+  /* Theme surface colors */
+  --clr-surface-a0: #ffffff;
+  --clr-surface-a10: #f8fafc;
+  --clr-surface-a20: #f1f5f9;
+  --clr-surface-a30: #e2e8f0;
+  --clr-surface-a40: #cbd5e1;
+  --clr-surface-a50: #94a3b8;
+
+  /* Theme tonal surface colors */
+  --clr-surface-tonal-a0: #f0f4ff;
+  --clr-surface-tonal-a10: #e5edff;
+  --clr-surface-tonal-a20: #dbe7ff;
+  --clr-surface-tonal-a30: #d1e1ff;
+  --clr-surface-tonal-a40: #c7dbff;
+  --clr-surface-tonal-a50: #bdd5ff;
+
+  /* Success colors */
+  --clr-success-a0: #10b981;
+  --clr-success-a10: #059669;
+  --clr-success-a20: #34d399;
+
+  /* Warning colors */
+  --clr-warning-a0: #f59e0b;
+  --clr-warning-a10: #d97706;
+  --clr-warning-a20: #fbbf24;
+
+  /* Danger colors */
+  --clr-danger-a0: #ef4444;
+  --clr-danger-a10: #dc2626;
+  --clr-danger-a20: #f87171;
+
+  /* Info colors */
+  --clr-info-a0: #3b82f6;
+  --clr-info-a10: #2563eb;
+  --clr-info-a20: #60a5fa;
+}
+
+.dark {
+  /* Deep Modern Dark Palette */
+  --clr-surface-a0: #0a0c12; /* Deep Space Navy */
+  --clr-surface-a10: #111827; /* Slate Dark */
+  --clr-surface-a20: #1f2937; /* Elevated Surface */
+  --clr-surface-a30: #374151; /* Borders/Dividers */
+  --clr-surface-a40: #4b5563; /* Muted Text */
+  --clr-surface-a50: #9ca3af; /* Secondary Text */
+
+  --clr-primary-a0: #3b82f6; /* Vibrant Blue */
+  --clr-primary-a10: #60a5fa; /* Hover Blue */
+  --clr-primary-a20: #93c5fd;
+  --clr-primary-a30: #bfdbfe;
+  --clr-primary-a40: #dbeafe;
+  --clr-primary-a50: #eff6ff; /* Heading Text */
+
+  --clr-surface-tonal-a0: #1e293b; /* Tonal Backgrounds */
+  --clr-surface-tonal-a10: #334155;
+
+  /* Semantic Dark */
+  --clr-success-a0: #10b981;
+  --clr-success-a10: #34d399;
+  --clr-danger-a0: #f43f5e;
+  --clr-danger-a10: #fb7185;
+  --clr-warning-a0: #f59e0b;
+  --clr-warning-a10: #fbbf24;
+}
+
 body {
-  @apply bg-gray-50 text-gray-900;
+  @apply bg-surface-a0 text-primary-a50 transition-colors duration-300;
 }

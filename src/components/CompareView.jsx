@@ -11,6 +11,7 @@ import {
     Legend,
 } from 'chart.js';
 import { useAuth } from '../context/AuthContext';
+import usePreferences from '../hooks/usePreferences';
 import { fetchResult, fetchExams, logActivity } from '../api';
 import dataLoader, { USE_JSON_DATA } from '../services/dataLoader';
 
@@ -42,6 +43,7 @@ const parseStudentRoll = (roll) => {
 
 const CompareView = () => {
     const { user, isAdmin } = useAuth();
+    const { theme } = usePreferences();
     const [studentA, setStudentA] = useState(null);
     const [studentB, setStudentB] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
@@ -49,15 +51,12 @@ const CompareView = () => {
     const [searchLoading, setSearchLoading] = useState(false);
     const [error, setError] = useState('');
 
-    // Admin: Manual Student A selection
     const [studentAQuery, setStudentAQuery] = useState('');
     const [studentALoading, setStudentALoading] = useState(false);
 
-    // Exam Selection State
     const [selectedExam, setSelectedExam] = useState(null);
     const [exams, setExams] = useState([]);
 
-    // 1. Load Exams on Mount
     useEffect(() => {
         const loadInitialData = async () => {
             try {
@@ -70,21 +69,16 @@ const CompareView = () => {
                     group = info.group;
                 }
 
-                console.log(`[CompareView] Fetching exams for Session: ${session}, Group: ${group}`);
                 const examsRes = await fetchExams(session, group);
                 const examsList = examsRes.data;
                 setExams(examsList);
 
-                // Default to latest exam (first in list)
-                let initialExamId = null;
                 if (examsList.length > 0) {
-                    initialExamId = examsList[0].exam_id_text; // Use exam_id_text
+                    const initialExamId = examsList[0].exam_id_text;
                     setSelectedExam(initialExamId);
                 } else {
                     setLoading(false);
                 }
-
-                // Initial fetch will happen in the next useEffect due to selectedExam change
             } catch (err) {
                 console.error(err);
                 setError('Could not load initial data.');
@@ -94,57 +88,83 @@ const CompareView = () => {
         loadInitialData();
     }, [user]);
 
-    // 2. Reload Student A (My Result) when selected exam changes
+    const filterSubjects = (subjects) => {
+        if (!subjects) return [];
+        return subjects.filter(s => {
+            // Check for marks/total and gp/grade point
+            const mark = s.total !== undefined ? s.total : s.marks;
+            const gp = s.gp !== undefined ? s.gp : s.grade_point;
+            
+            // Exclude if total is 0 AND gp is strictly null/undefined
+            // (Note: gp can be 0.0 for failed subjects, which we want to keep. 
+            // We only want to remove if it looks like a missing subject entry)
+            if (mark === 0 && (gp === null || gp === undefined)) {
+                return false;
+            }
+            return true;
+        });
+    };
+
+    const processData = (data) => {
+        const validSubjects = filterSubjects(data.subjects);
+        return {
+            name: data.student.name || data.student.roll,
+            roll: data.student.roll,
+            subjects: validSubjects.map(s => s.subject_name),
+            marks: validSubjects.map(s => s.total || 0),
+            fullData: validSubjects
+        };
+    };
+
+    const processJsonData = (studentMarks, roll) => {
+        // studentMarks is array of { subject: "Name", total: 80, gp: 5.0 ... }
+        // We need to apply the filter logic here too
+        const validMarks = studentMarks.filter(s => !(s.total === 0 && (s.gp === null || s.gp === undefined)));
+        
+        return {
+            name: `Roll ${roll}`, // JSON loader might not have names if simple array
+            roll: roll,
+            subjects: validMarks.map(s => s.subject),
+            marks: validMarks.map(s => s.total),
+            fullData: validMarks.map(s => ({ subject_name: s.subject, total: s.total, gp: s.gp }))
+        };
+    };
+
     useEffect(() => {
         const updateStudentA = async () => {
-            // Skip if admin is manually selecting Student A
             if (isAdmin() && studentAQuery) return;
 
             if (!user?.roll || !selectedExam) {
-                // If we have an exam but no user roll, we can't load "My Result"
                 if (selectedExam && !user?.roll) setLoading(false);
                 return;
             }
 
-            setLoading(true); // Set loading while fetching new data
+            setLoading(true);
 
             try {
-                // Try loading from JSON first if enabled
                 if (USE_JSON_DATA) {
-                    console.log(`[CompareView] Loading marks for A from JSON for exam ${selectedExam}`);
                     const marksData = await dataLoader.loadMarks(selectedExam);
                     const studentMarks = dataLoader.getStudentMarks(marksData, user.roll);
 
                     if (studentMarks) {
-                        const processed = {
-                            name: user.name || user.roll,
-                            roll: user.roll,
-                            subjects: studentMarks.map(s => s.subject),
-                            marks: studentMarks.map(s => s.total),
-                            fullData: studentMarks.map(s => ({ subject_name: s.subject, total: s.total }))
-                        };
+                        const processed = processJsonData(studentMarks, user.roll);
+                        // Try to attach name if user object has it
+                        if (user.name) processed.name = user.name;
                         setStudentA(processed);
                     } else {
-                        // Fallback to API if specific student not in JSON (unlikely if file exists)
-                        console.log('[CompareView] Student not in JSON, using API fallback');
                         const res = await fetchResult(user.roll, selectedExam);
                         setStudentA(processData(res.data));
                     }
-
                 } else {
-                    // Fallback to API
                     const res = await fetchResult(user.roll, selectedExam);
                     setStudentA(processData(res.data));
                 }
             } catch (err) {
                 console.error("Failed to update my result", err);
-
-                // Try API fallback on error
                 try {
                     const res = await fetchResult(user.roll, selectedExam);
                     setStudentA(processData(res.data));
                 } catch (apiErr) {
-                    console.error("API fallback failed for A", apiErr);
                     setStudentA(null);
                 }
             } finally {
@@ -155,17 +175,6 @@ const CompareView = () => {
         updateStudentA();
     }, [selectedExam, user]);
 
-    const processData = (data) => {
-        return {
-            name: data.student.name || data.student.roll,
-            roll: data.student.roll,
-            subjects: data.subjects.map(s => s.subject_name),
-            marks: data.subjects.map(s => s.total || 0),
-            fullData: data.subjects
-        };
-    };
-
-    // Admin: Search for Student A manually
     const handleSearchStudentA = async () => {
         if (!studentAQuery || !selectedExam || !isAdmin()) return;
         setStudentALoading(true);
@@ -177,13 +186,7 @@ const CompareView = () => {
                 const studentMarks = dataLoader.getStudentMarks(marksData, studentAQuery);
 
                 if (studentMarks) {
-                    setStudentA({
-                        name: `Roll ${studentAQuery}`,
-                        roll: studentAQuery,
-                        subjects: studentMarks.map(s => s.subject),
-                        marks: studentMarks.map(s => s.total),
-                        fullData: studentMarks.map(s => ({ subject_name: s.subject, total: s.total }))
-                    });
+                    setStudentA(processJsonData(studentMarks, studentAQuery));
                 } else {
                     const res = await fetchResult(studentAQuery, selectedExam);
                     setStudentA(processData(res.data));
@@ -193,14 +196,8 @@ const CompareView = () => {
                 setStudentA(processData(res.data));
             }
         } catch (err) {
-            console.error("Failed to load Student A", err);
-            try {
-                const res = await fetchResult(studentAQuery, selectedExam);
-                setStudentA(processData(res.data));
-            } catch (apiErr) {
-                setError('Student A not found.');
-                setStudentA(null);
-            }
+            setError('Student A not found.');
+            setStudentA(null);
         } finally {
             setStudentALoading(false);
         }
@@ -214,54 +211,30 @@ const CompareView = () => {
         let studentBData = null;
 
         try {
-            // Try JSON first if enabled
             if (USE_JSON_DATA) {
-                console.log(`[CompareView] Loading marks for B from JSON for exam ${selectedExam}`);
                 try {
                     const marksData = await dataLoader.loadMarks(selectedExam);
                     const studentMarks = dataLoader.getStudentMarks(marksData, searchQuery);
 
                     if (studentMarks) {
-                        studentBData = {
-                            name: `Roll ${searchQuery}`,
-                            roll: searchQuery,
-                            subjects: studentMarks.map(s => s.subject),
-                            marks: studentMarks.map(s => s.total),
-                            fullData: studentMarks.map(s => ({ subject_name: s.subject, total: s.total }))
-                        };
+                        studentBData = processJsonData(studentMarks, searchQuery);
                     }
-                } catch (jsonErr) {
-                    console.log('[CompareView] JSON loading failed, will try API:', jsonErr.message);
-                }
+                } catch (jsonErr) {}
             }
 
-            // If JSON didn't work, try API
             if (!studentBData) {
-                console.log('[CompareView] Using API to fetch student B');
                 const res = await fetchResult(searchQuery, selectedExam, user?.roll);
                 studentBData = processData(res.data);
             }
 
-            // Success - set data and log telemetry
             setStudentB(studentBData);
-
-            const actorRoll = isAdmin() ? 'ADMIN' : user?.roll;
-            const metadata = {
-                exam: selectedExam,
-                opponent: studentBData.name,
-                ...(isAdmin() && studentA ? { admin_comparison: `Admin Compared ${studentA.name} with ${studentBData.name}` } : {})
-            };
-            logActivity('COMPARE_RESULT', studentBData.roll, metadata, actorRoll).catch(e => console.warn('Telemetry failed:', e));
+            logActivity('COMPARE_RESULT', studentBData.roll, { exam: selectedExam, opponent: studentBData.name }, isAdmin() ? 'ADMIN' : user?.roll).catch(e => {});
 
         } catch (err) {
-            console.error('[CompareView] Search failed:', err);
-            // Provide user-friendly error
             if (err.response?.status === 404) {
                 setError('Student not found for this exam.');
-            } else if (err.message?.includes('Network') || err.code === 'ERR_NETWORK') {
-                setError('Network error. Please check your connection.');
             } else {
-                setError('Student not found or no result for this exam.');
+                setError('Student not found or no result.');
             }
             setStudentB(null);
         } finally {
@@ -270,29 +243,30 @@ const CompareView = () => {
     };
 
     const labels = studentA?.subjects || studentB?.subjects || [];
-
-    // Map Student B to Student A's labels
-    // Note: If A is null (user hasn't taken exam), we use B's labels directly
     const studentBmarks = studentB ? labels.map(label => {
         const subject = studentB.fullData.find(s => s.subject_name === label || s.subject === label);
         return subject ? subject.total : 0;
     }) : [];
 
-    // Map Student A to labels (in case B defined labels)
     const studentAmarks = studentA ? labels.map(label => {
         const subject = studentA.fullData.find(s => s.subject_name === label || s.subject === label);
         return subject ? subject.total : 0;
     }) : [];
 
-
-    // Dynamic Scale Calculation
-    const allMarks = [
-        ...studentAmarks,
-        ...studentBmarks
-    ];
+    const allMarks = [...studentAmarks, ...studentBmarks];
     const maxMark = Math.max(...allMarks, 0);
-    // If maxMark is low (e.g. 15), scale to 20. If 80, scale to 100.
     const chartMax = maxMark > 0 ? Math.ceil(maxMark * 1.1) : 100;
+
+    // Theme-based Colors
+    const isDark = theme === 'dark';
+    const colorA = isDark ? '#38bdf8' : '#1664a2'; // Sky-400 vs Primary-700
+    const bgA = isDark ? 'rgba(56, 189, 248, 0.2)' : 'rgba(22, 100, 162, 0.2)';
+    
+    const colorB = isDark ? '#fb7185' : '#9c2121'; // Rose-400 vs Red-800
+    const bgB = isDark ? 'rgba(251, 113, 133, 0.2)' : 'rgba(156, 33, 33, 0.2)';
+    
+    const gridColor = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)';
+    const textColor = isDark ? '#e2e8f0' : '#1f2360';
 
     const data = {
         labels: labels,
@@ -300,232 +274,413 @@ const CompareView = () => {
             studentA && {
                 label: studentA.name,
                 data: studentAmarks,
-                backgroundColor: 'rgba(99, 102, 241, 0.2)',
-                borderColor: '#6366f1',
+                backgroundColor: bgA,
+                borderColor: colorA,
                 borderWidth: 2,
-                pointBackgroundColor: '#6366f1',
+                pointBackgroundColor: colorA,
             },
             studentB && {
                 label: studentB.name,
                 data: studentBmarks,
-                backgroundColor: 'rgba(239, 68, 68, 0.2)',
-                borderColor: '#ef4444',
+                backgroundColor: bgB,
+                borderColor: colorB,
                 borderWidth: 2,
-                pointBackgroundColor: '#ef4444',
+                pointBackgroundColor: colorB,
             }
         ].filter(Boolean),
     };
 
-    const chartOptions = {
-        maintainAspectRatio: false,
-        scales: {
-            r: {
-                min: 0,
-                max: chartMax,
-                ticks: { display: false },
-                pointLabels: {
-                    font: { size: 12, weight: 'bold' },
-                    color: '#6b7280' // zinc-500
-                },
-                grid: { color: 'rgba(0, 0, 0, 0.05)' },
-                angleLines: { color: 'rgba(0, 0, 0, 0.05)' }
+        const chartOptions = {
+
+            maintainAspectRatio: false,
+
+            scales: {
+
+                r: {
+
+                    min: 0,
+
+                    max: chartMax,
+
+                    ticks: { display: false },
+
+                    pointLabels: {
+
+                        font: { 
+
+                            size: window.innerWidth < 768 ? 10 : 12, 
+
+                            weight: 'bold', 
+
+                            family: "'Inter', sans-serif" 
+
+                        },
+
+                        color: textColor
+
+                    },
+
+                    grid: { color: gridColor },
+
+                    angleLines: { color: gridColor }
+
+                }
+
+            },
+
+            plugins: {
+
+                legend: { 
+
+                    position: 'bottom', 
+
+                    labels: { 
+
+                        usePointStyle: true, 
+
+                        padding: 20, 
+
+                        font: { size: window.innerWidth < 768 ? 11 : 12, weight: 'bold' },
+
+                        color: textColor 
+
+                    } 
+
+                }
+
             }
-        },
-        plugins: {
-            legend: { position: 'bottom', labels: { usePointStyle: true, padding: 20 } }
+
+        };
+
+    
+
+        if (loading && !exams.length) {
+
+            return <div className="p-8 text-center text-primary-a30 animate-pulse font-medium">Preparing comparison engine...</div>;
+
         }
-    };
 
-    if (loading && !exams.length) {
-        return <div className="p-8 text-center text-zinc-500 animate-pulse">Loading comparison...</div>;
-    }
+    
 
-    if (!studentA && !loading && user?.roll && !studentB) {
-        // Show specific message if student has no result for selected exam AND hasn't searched for anyone else
-        return (
-            <div className="p-4 md:p-8 h-full flex flex-col items-center justify-center gap-4">
-                <div className="bg-yellow-50 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-200 p-4 rounded-lg flex items-center gap-2">
-                    <AlertCircle size={20} />
-                    <p>No result found for you in this exam. Search a roll number to view.</p>
-                </div>
-                <div className="flex flex-col gap-4 items-center">
-                    <div className="flex items-center gap-2">
-                        <span className="text-zinc-500">Exam:</span>
+        if (!studentA && !loading && user?.roll && !studentB) {
+
+            return (
+
+                <div className="p-4 md:p-8 h-full flex flex-col items-center justify-center gap-6">
+
+                    <div className="bg-warning-a20/20 text-warning-a0 p-6 rounded-2xl border border-warning-a10/30 flex items-center gap-3 shadow-sm max-w-md text-center flex-col">
+
+                        <AlertCircle size={32} />
+
+                        <p className="font-semibold text-sm md:text-base">No result found for your roll in this exam. Try searching another student to begin comparison.</p>
+
+                    </div>
+
+                    <div className="flex flex-col gap-4 items-center w-full max-w-sm">
+
                         <select
+
                             value={selectedExam || ''}
+
                             onChange={(e) => setSelectedExam(e.target.value)}
-                            className="px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900"
+
+                            className="w-full px-4 py-3 rounded-xl border border-surface-a20 bg-surface-a0 text-primary-a50 focus:ring-2 focus:ring-primary-a10/20 outline-none shadow-sm font-medium text-sm md:text-base"
+
                         >
+
                             {exams.map(exam => (
+
                                 <option key={exam.id} value={exam.exam_id_text}>{exam.name}</option>
+
                             ))}
+
                         </select>
-                    </div>
-                    {/* Fixed: Responsive search bar alignment */}
-                    <div className="flex flex-row items-center gap-2 w-full max-w-xs">
-                        <div className="relative flex-1">
-                            <input
-                                type="text"
-                                placeholder="Search Roll..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                                className="w-full px-4 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none pl-9"
-                            />
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
-                        </div>
-                        <button
-                            onClick={handleSearch}
-                            disabled={searchLoading || !selectedExam}
-                            className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-sm shrink-0"
-                        >
-                            {searchLoading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Search size={20} />}
-                        </button>
-                    </div>
-                </div>
-            </div>
-        );
-    }
 
-    return (
-        <div className="p-4 md:p-8 h-full flex flex-col gap-6">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <h2 className="text-2xl font-bold font-display text-zinc-900 dark:text-zinc-100">Versus Mode</h2>
+                        <div className="flex flex-row items-center gap-2 w-full">
 
-                <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2 w-full md:w-auto">
-                    {/* Exam Dropdown */}
-                    <select
-                        value={selectedExam || ''}
-                        onChange={(e) => {
-                            setSelectedExam(e.target.value);
-                            setStudentB(null);
-                        }}
-                        className="w-full md:w-48 px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm shadow-sm"
-                    >
-                        {exams.map(exam => (
-                            <option key={exam.id} value={exam.exam_id_text}>{exam.name}</option>
-                        ))}
-                    </select>
+                            <div className="relative flex-1">
 
-                    {/* Admin: Student A Selector */}
-                    {isAdmin() && (
-                        <div className="flex flex-row items-center gap-2 w-full md:w-auto">
-                            <div className="relative flex-1 md:flex-initial">
                                 <input
+
                                     type="text"
-                                    placeholder="Student A Roll..."
-                                    value={studentAQuery}
-                                    onChange={(e) => setStudentAQuery(e.target.value)}
-                                    onKeyDown={(e) => e.key === 'Enter' && handleSearchStudentA()}
-                                    className="w-full md:w-36 px-4 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm pl-9 text-sm"
+
+                                    placeholder="Search Roll..."
+
+                                    value={searchQuery}
+
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+
+                                    onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+
+                                    className="w-full px-4 py-3 rounded-xl border border-surface-a20 bg-surface-a0 focus:ring-2 focus:ring-primary-a10/20 outline-none pl-11 text-primary-a50 shadow-sm text-sm md:text-base"
+
                                 />
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={14} />
+
+                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-primary-a30" size={18} />
+
                             </div>
+
                             <button
-                                onClick={handleSearchStudentA}
-                                disabled={studentALoading || !selectedExam || !studentAQuery}
-                                className="p-2 bg-zinc-600 text-white rounded-lg hover:bg-zinc-700 disabled:opacity-50 transition-colors shadow-sm shrink-0"
-                                title="Load Student A"
+
+                                onClick={handleSearch}
+
+                                disabled={searchLoading || !selectedExam}
+
+                                className="p-3 bg-primary-a10 text-white rounded-xl hover:bg-primary-a0 disabled:opacity-50 transition-all shadow-lg shadow-primary-a10/20 active:scale-95"
+
                             >
-                                {studentALoading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <ChevronDown size={16} />}
+
+                                {searchLoading ? <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Search size={24} />}
+
                             </button>
-                        </div>
-                    )}
 
-                    {/* Fixed: Responsive Search Bar */}
-                    <div className="flex flex-row items-center gap-2 w-full md:w-auto">
-                        <div className="relative flex-1 md:flex-initial">
-                            <input
-                                type="text"
-                                placeholder="Compare with Roll..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                                className="w-full md:w-48 px-4 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm pl-9 text-sm"
-                            />
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
                         </div>
-                        <button
-                            onClick={handleSearch}
-                            disabled={searchLoading || !selectedExam}
-                            className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-sm shrink-0"
+
+                    </div>
+
+                </div>
+
+            );
+
+        }
+
+    
+
+        return (
+
+            <div className="p-4 md:p-8 h-full flex flex-col gap-6 md:gap-8">
+
+                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 lg:gap-6">
+
+                    <h2 className="text-2xl md:text-3xl font-display font-bold text-primary-a50 tracking-tight">Performance Comparison</h2>
+
+    
+
+                    <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 w-full lg:w-auto">
+
+                        <select
+
+                            value={selectedExam || ''}
+
+                            onChange={(e) => {
+
+                                setSelectedExam(e.target.value);
+
+                                setStudentB(null);
+
+                            }}
+
+                            className="w-full sm:w-auto sm:min-w-[200px] px-4 py-2.5 rounded-xl border border-surface-a20 bg-surface-a0 text-primary-a50 focus:ring-2 focus:ring-primary-a10/20 outline-none transition-all text-sm font-semibold shadow-sm cursor-pointer"
+
                         >
-                            {searchLoading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Search size={20} />}
-                        </button>
+
+                            {exams.map(exam => (
+
+                                <option key={exam.id} value={exam.exam_id_text}>{exam.name}</option>
+
+                            ))}
+
+                        </select>
+
+    
+
+                        {isAdmin() && (
+
+                            <div className="flex items-center gap-2 w-full sm:w-auto">
+
+                                <div className="relative flex-1 sm:w-36">
+
+                                    <input
+
+                                        type="text"
+
+                                        placeholder="Roll A..."
+
+                                        value={studentAQuery}
+
+                                        onChange={(e) => setStudentAQuery(e.target.value)}
+
+                                        onKeyDown={(e) => e.key === 'Enter' && handleSearchStudentA()}
+
+                                        className="w-full px-4 py-2.5 rounded-xl border border-surface-a20 bg-surface-a0 text-primary-a50 focus:ring-2 focus:ring-primary-a10/20 outline-none transition-all shadow-sm pl-10 text-sm font-medium"
+
+                                    />
+
+                                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-primary-a30" size={14} />
+
+                                </div>
+
+                                <button onClick={handleSearchStudentA} disabled={studentALoading} className="p-2.5 bg-surface-tonal-a10 text-primary-a10 rounded-xl hover:bg-surface-tonal-a0 transition-all shadow-sm active:scale-95 border border-primary-a10/10 shrink-0">
+
+                                    {studentALoading ? <div className="w-4 h-4 border-2 border-primary-a10/30 border-t-primary-a10 rounded-full animate-spin" /> : <ChevronDown size={18} />}
+
+                                </button>
+
+                            </div>
+
+                        )}
+
+    
+
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
+
+                            <div className="relative flex-1 sm:w-44">
+
+                                <input
+
+                                    type="text"
+
+                                    placeholder="Roll B..."
+
+                                    value={searchQuery}
+
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+
+                                    onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+
+                                    className="w-full px-4 py-2.5 rounded-xl border border-surface-a20 bg-surface-a0 text-primary-a50 focus:ring-2 focus:ring-primary-a10/20 outline-none transition-all shadow-sm pl-10 text-sm font-medium"
+
+                                />
+
+                                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-primary-a30" size={16} />
+
+                            </div>
+
+                            <button onClick={handleSearch} disabled={searchLoading} className="p-2.5 bg-primary-a10 text-white rounded-xl hover:bg-primary-a0 transition-all shadow-lg shadow-primary-a10/20 active:scale-95 shrink-0">
+
+                                {searchLoading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Search size={20} />}
+
+                            </button>
+
+                        </div>
+
                     </div>
+
                 </div>
+
+    
+
+                {error && (
+
+                    <div className="bg-danger-a20/10 text-danger-a10 px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-2 border border-danger-a10/20 w-fit animate-shake">
+
+                        <AlertCircle size={18} /> {error}
+
+                    </div>
+
+                )}
+
+    
+
+                <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-8 min-h-0">
+
+                    <div className="bg-surface-a0 p-6 rounded-3xl border border-surface-a20 shadow-xl flex flex-col items-center justify-center relative overflow-hidden group">
+
+                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary-a10 to-danger-a10 opacity-50"></div>
+
+                        <div className="w-full aspect-square max-h-[500px] transition-transform duration-500 group-hover:scale-[1.02]">
+
+                            <Radar data={data} options={chartOptions} />
+
+                        </div>
+
+                    </div>
+
+    
+
+                    <div className="bg-surface-a0 rounded-3xl border border-surface-a20 shadow-xl overflow-hidden flex flex-col">
+
+                        <div className="p-4 md:p-6 bg-surface-a10/30 border-b border-surface-a10 flex items-center justify-between">
+
+                            <h3 className="text-xs md:text-sm font-bold text-primary-a40 uppercase tracking-widest">Score Differential</h3>
+
+                            <div className="flex gap-2">
+
+                                <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-primary-a10"></span><span className="text-[10px] md:text-[10px] font-bold text-primary-a40 uppercase">A</span></div>
+
+                                <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-danger-a10"></span><span className="text-[10px] md:text-[10px] font-bold text-primary-a40 uppercase">B</span></div>
+
+                            </div>
+
+                        </div>
+
+                        <div className="flex-1 overflow-x-auto scrollbar-thin scrollbar-thumb-surface-a20">
+
+                            <table className="w-full text-sm text-left border-collapse">
+
+                                <thead className="bg-surface-a10/50 text-primary-a40 font-bold border-b border-surface-a10 uppercase text-[10px] tracking-wider">
+
+                                    <tr>
+
+                                        <th className="px-4 md:px-6 py-4">Subject</th>
+
+                                        <th className="px-4 md:px-6 py-4 text-center">Scores</th>
+
+                                        <th className="px-4 md:px-6 py-4 text-right">Delta</th>
+
+                                    </tr>
+
+                                </thead>
+
+                                <tbody className="divide-y divide-surface-a10">
+
+                                    {labels.map((subj, idx) => {
+
+                                        const markA = studentAmarks[idx] || 0;
+
+                                        const markB = studentBmarks[idx] || 0;
+
+                                        const diff = markA - markB;
+
+                                        const showDiff = !!studentB;
+
+    
+
+                                        return (
+
+                                            <tr key={subj} className="hover:bg-surface-tonal-a0 transition-colors">
+
+                                                <td className="px-4 md:px-6 py-3 md:py-4 font-bold text-primary-a50 text-xs md:text-sm">{subj}</td>
+
+                                                <td className="px-4 md:px-6 py-3 md:py-4">
+
+                                                    <div className="flex flex-col md:flex-row items-center justify-center gap-1 md:gap-3">
+
+                                                        <span className="w-9 md:w-10 text-center font-mono font-bold text-primary-a10 bg-primary-a20/10 rounded-md py-0.5 text-xs md:text-sm">{markA}</span>
+
+                                                        <span className="text-[9px] md:text-xs text-primary-a30 opacity-40 font-bold uppercase">vs</span>
+
+                                                        <span className="w-9 md:w-10 text-center font-mono font-bold text-danger-a10 bg-danger-a20/10 rounded-md py-0.5 text-xs md:text-sm">{showDiff ? markB : '-'}</span>
+
+                                                    </div>
+
+                                                </td>
+
+                                                <td className={`px-4 md:px-6 py-3 md:py-4 text-right font-mono font-black text-xs md:text-sm ${diff > 0 ? 'text-success-a10' : diff < 0 ? 'text-danger-a10' : 'text-primary-a30'}`}>
+
+                                                    {showDiff ? (diff > 0 ? `+${diff}` : diff) : '-'}
+
+                                                </td>
+
+                                            </tr>
+
+                                        );
+
+                                    })}
+
+                                </tbody>
+
+                            </table>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
             </div>
 
-            {error && (
-                <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-300 px-4 py-2 rounded-lg text-sm flex items-center gap-2 w-fit">
-                    <AlertCircle size={14} /> {error}
-                </div>
-            )}
+        );
 
-            <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-6 min-h-0">
-                {/* Radar Chart - Scaled Up */}
-                <div className="bg-white dark:bg-zinc-900 p-4 md:p-6 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col items-center justify-center relative overflow-hidden">
-                    <div className="w-full aspect-square md:h-full md:max-h-[500px]">
-                        <Radar data={data} options={chartOptions} />
-                    </div>
-                </div>
-
-                {/* Diff Table */}
-                <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden flex flex-col">
-                    <h3 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider m-4 pl-2">Score Differential</h3>
-                    <div className="flex-1 overflow-x-auto">
-                        <table className="w-full text-sm text-left">
-                            <thead className="bg-zinc-50 dark:bg-zinc-900 text-zinc-500 font-medium border-b border-zinc-100 dark:border-zinc-800">
-                                <tr>
-                                    <th className="px-3 py-2 md:px-6 md:py-3">Subject</th>
-
-                                    {/* Mobile: Combined Header */}
-                                    <th className="px-3 py-2 md:hidden text-center">Score</th>
-
-                                    {/* Desktop: Separate Headers */}
-                                    <th className="hidden md:table-cell px-6 py-3">{studentA?.name?.split(' ')[0] || 'You'}</th>
-                                    <th className="hidden md:table-cell px-6 py-3">{studentB ? studentB.name.split(' ')[0] : 'Opponent'}</th>
-
-                                    <th className="px-3 py-2 md:px-6 md:py-3 text-right">Diff</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                                {labels.map((subj, idx) => {
-                                    const markA = studentAmarks[idx] || 0;
-                                    const markB = studentBmarks[idx] || 0;
-                                    const diff = markA - markB;
-                                    const showDiff = !!studentB;
-
-                                    return (
-                                        <tr key={subj} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
-                                            <td className="px-3 py-2 md:px-6 md:py-4 font-medium text-zinc-900 dark:text-zinc-100 max-w-[120px] md:max-w-none truncate md:overflow-visible" title={subj}>{subj}</td>
-
-                                            {/* Mobile: Combined Score */}
-                                            <td className="px-3 py-2 md:hidden text-center">
-                                                <div className="flex flex-col items-center leading-tight">
-                                                    <span className="font-mono font-bold text-indigo-600">{markA}</span>
-                                                    <span className="text-[10px] text-zinc-400 font-mono">
-                                                        {showDiff ? `vs ${markB}` : '-'}
-                                                    </span>
-                                                </div>
-                                            </td>
-
-                                            {/* Desktop: Separate Scores */}
-                                            <td className="hidden md:table-cell px-6 py-4 text-indigo-600 font-mono font-bold">{markA}</td>
-                                            <td className="hidden md:table-cell px-6 py-4 text-zinc-600 dark:text-zinc-400 font-mono">{showDiff ? markB : '-'}</td>
-
-                                            <td className={`px-3 py-2 md:px-6 md:py-4 text-right font-mono font-bold ${diff > 0 ? 'text-green-500' : diff < 0 ? 'text-red-500' : 'text-zinc-400'}`}>
-                                                {showDiff ? (diff > 0 ? `+${diff}` : diff) : '-'}
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-};
+    };
 export default CompareView;

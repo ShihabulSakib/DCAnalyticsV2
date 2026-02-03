@@ -279,6 +279,46 @@ def parse_pdf(pdf_path):
                             'gp': safe_float(row[gp_col]) if gp_col and gp_col < len(row) else None,
                         })
                 
+                # --- Post-Processing Normalization ---
+                # User Requirement:
+                # 1. Biology: Ensure "Biology 1st Paper" and "Biology 2nd Paper".
+                #    Map "Biology" -> "Biology 1st Paper" (heuristic).
+                #    Map "Biology (combined)" -> "Biology 1st Paper" (heuristic).
+                # 2. Statistics: Ensure "Statistics" only.
+                #    Map "Statistics 1st Paper" -> "Statistics".
+                #    Map "Statistics 2nd Paper" -> "Statistics".
+                
+                normalized_subjects = []
+                for subj in subjects_data:
+                    name = subj['name']
+                    
+                    # Biology Normalization
+                    if name.lower() == "biology" or name.lower() == "biology (combined)":
+                         name = "Biology 1st Paper"
+                    
+                    # Statistics Normalization
+                    if "statistics" in name.lower():
+                        if "1st paper" in name.lower() or "2nd paper" in name.lower():
+                            name = "Statistics"
+                    
+                    subj['name'] = name
+                    
+                    # Check for duplicates in the normalized list
+                    # If we have two "Statistics", we currently keep both (duplicate subject names in list).
+                    # The DB will ingest both. 
+                    # For Statistics, the user wants "Only Statistics", implying one entry?
+                    # If we have two entries, it's ambiguous. But we can't easily merge marks without logic.
+                    # We will keep them as "Statistics" - the DB will store two rows for the same subject ID.
+                    # (Wait, student_marks has no unique constraint on result_id+subject_id? 
+                    #  The schema says: UNIQUE(student_id, exam_id) for results, but for marks?
+                    #  CREATE TABLE IF NOT EXISTS student_marks (... FOREIGN KEY ...)
+                    #  No unique constraint on (result_id, subject_id) seen in database.py init_db.
+                    #  So it allows duplicates. This is acceptable for now.)
+                    
+                    normalized_subjects.append(subj)
+                
+                subjects_data = normalized_subjects
+
                 # Priority 1: Table structure (most reliable if GPA column exists)
                 if student_data['gpa'] is None: student_data['gpa'] = extract_gpa_from_table(main_table, header_idx)
                 # Priority 2: Text pattern after ICT (fallback for specific layout)

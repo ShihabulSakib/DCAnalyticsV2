@@ -57,13 +57,13 @@ const Navbar = ({ toggleTheme, isDark, exams = [], selectedExam, onExamChange })
   }
 
   return (
-    <nav className="bg-white dark:bg-dark-card border-b border-gray-200 dark:border-gray-700 shadow-sm transition-colors duration-200">
+    <nav className="bg-surface-a0 border-b border-surface-a20 shadow-sm transition-colors duration-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           <div className="flex items-center gap-6">
             <div className="flex items-center">
               <img src="/file.svg" alt="DCAnalytics Logo" className="h-[60px] w-[60px] mr-2" />
-              <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-400 dark:to-purple-400 font-display hidden md:block">
+              <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary-a10 to-primary-a30 font-display hidden md:block">
                 DCAnalytics
               </span>
             </div>
@@ -77,8 +77,8 @@ const Navbar = ({ toggleTheme, isDark, exams = [], selectedExam, onExamChange })
                 onClick={toggleOpen}
                 onKeyDown={onKeyDown}
                 className={
-                  "appearance-none bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 py-2 pl-4 pr-10 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm font-medium transition-all cursor-pointer min-w-[200px] flex items-center justify-between " +
-                  (open ? 'ring-2 ring-indigo-300 dark:ring-indigo-700/60' : '')
+                  "appearance-none bg-surface-a10 border border-surface-a20 text-primary-a50 py-2 pl-4 pr-10 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-a20 focus:border-transparent text-sm font-medium transition-all cursor-pointer min-w-[200px] flex items-center justify-between " +
+                  (open ? 'ring-2 ring-primary-a20' : '')
                 }
               >
                 <span className="truncate">{selected ? selected.name : 'Select exam'}</span>
@@ -105,14 +105,14 @@ const Navbar = ({ toggleTheme, isDark, exams = [], selectedExam, onExamChange })
                     aria-activedescendant={exams[highlight] ? `exam-${exams[highlight].id}` : undefined}
                     tabIndex={-1}
                     className={
-                      "absolute mt-2 w-full z-50 rounded-lg shadow-lg overflow-hidden max-h-60 overflow-auto divide-y divide-gray-100 dark:divide-gray-700 " +
+                      "absolute mt-2 w-full z-50 rounded-lg shadow-lg overflow-hidden max-h-60 overflow-auto divide-y divide-surface-a10 " +
                       (isDark
-                        ? 'bg-gray-800 border border-gray-700'
-                        : 'bg-white')
+                        ? 'bg-surface-tonal-a10 border border-surface-a20'
+                        : 'bg-surface-a0')
                     }
                   >
                     {exams.length === 0 ? (
-                      <li className="p-3 text-sm text-gray-400">No exams</li>
+                      <li className="p-3 text-sm text-primary-a40">No exams</li>
                     ) : (
                       exams.map((opt, idx) => (
                         <motion.li
@@ -128,10 +128,10 @@ const Navbar = ({ toggleTheme, isDark, exams = [], selectedExam, onExamChange })
                           className={
                             `cursor-pointer select-none px-4 py-2 text-sm transition-colors duration-120 ` +
                             (selected && selected.id === opt.id
-                              ? 'bg-indigo-50 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-100'
+                              ? 'bg-surface-tonal-a0 text-primary-a50 font-semibold'
                               : (idx === highlight
-                                ? 'bg-indigo-50 dark:bg-gray-700 text-indigo-700 dark:text-gray-100'
-                                : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700')
+                                ? 'bg-surface-tonal-a0 text-primary-a50'
+                                : 'text-primary-a50 hover:bg-surface-a10')
                             )
                           }
                         >
@@ -149,13 +149,13 @@ const Navbar = ({ toggleTheme, isDark, exams = [], selectedExam, onExamChange })
           <div className="flex items-center space-x-4">
             <button
               onClick={toggleTheme}
-              className="p-2 rounded-full text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
+              className="p-2 rounded-full text-primary-a40 hover:bg-surface-a10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-a20 transition-colors"
               aria-label="Toggle Dark Mode"
             >
               {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
             </button>
             <div className="hidden md:flex items-center space-x-2">
-              <span className="text-sm text-gray-500 dark:text-gray-400">v1.0</span>
+              <span className="text-sm text-primary-a40">v1.0</span>
             </div>
           </div>
         </div>

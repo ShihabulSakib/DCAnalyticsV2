@@ -38,35 +38,41 @@ const LoginPage = () => {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-slate-50 dark:bg-zinc-950 md:bg-indigo-600 md:dark:bg-zinc-900">
+        <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-surface-a10">
+            {/* Background elements for depth */}
+            <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
+                <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-primary-a10/10 blur-[100px]"></div>
+                <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-primary-a20/10 blur-[100px]"></div>
+            </div>
+
             {/* Login Card */}
-            <div className="relative z-10 w-full max-w-md bg-white dark:bg-zinc-900 md:bg-white md:dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-xl md:shadow-2xl overflow-hidden transition-colors">
+            <div className="relative z-10 w-full max-w-md bg-surface-a0 border border-surface-a20 rounded-2xl shadow-2xl overflow-hidden transition-colors">
                 {/* Top decorative line */}
-                <div className="h-1 w-full bg-indigo-500"></div>
+                <div className="h-1.5 w-full bg-gradient-to-r from-primary-a10 to-primary-a30"></div>
 
                 <div className="p-8">
                     {/* Header */}
                     <div className="text-center mb-10">
-                        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-50 dark:bg-zinc-700 border border-indigo-100 dark:border-zinc-600 shadow-inner mb-4 text-indigo-600 dark:text-indigo-400">
+                        <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-surface-tonal-a0 border border-surface-a20 shadow-sm mb-6">
                             <img src="/file.svg" alt="DCAnalytics Logo" className="h-[60px] w-[60px]" />
                         </div>
-                        <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">Student Portal</h1>
-                        <p className="text-zinc-500 dark:text-zinc-400 text-sm mt-2 font-medium">Enter your credentials to access results</p>
+                        <h1 className="text-3xl font-display font-bold text-primary-a50 tracking-tight">Student Portal</h1>
+                        <p className="text-primary-a40 text-sm mt-2 font-medium">Enter your credentials to access results</p>
                     </div>
 
                     {/* Form */}
-                    <form onSubmit={handleSubmit} className="space-y-8">
-                        <div className="space-y-4">
-                            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300 ml-1">Roll Number</label>
+                    <form onSubmit={handleSubmit} className="space-y-6">
+                        <div className="space-y-3">
+                            <label className="text-sm font-semibold text-primary-a40 ml-1 uppercase tracking-wider">Roll Number</label>
                             <div className="relative group">
                                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                                    <Lock className="h-5 w-5 text-zinc-400 dark:text-zinc-500 group-focus-within:text-indigo-500 transition-colors" />
+                                    <Lock className="h-5 w-5 text-primary-a30 group-focus-within:text-primary-a10 transition-colors" />
                                 </div>
                                 <input
                                     type="text"
                                     value={roll}
                                     onChange={(e) => setRoll(e.target.value)}
-                                    className="block w-full pl-11 pr-4 py-3.5 bg-zinc-50 dark:bg-zinc-700 border border-zinc-200 dark:border-zinc-600 rounded-xl text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all font-medium"
+                                    className="block w-full pl-11 pr-4 py-3.5 bg-surface-a10 border border-surface-a20 rounded-xl text-primary-a50 placeholder-primary-a30 focus:outline-none focus:ring-2 focus:ring-primary-a10/20 focus:border-primary-a10 transition-all font-medium"
                                     placeholder="e.g. 1202425010..."
                                     required
                                 />
@@ -74,7 +80,7 @@ const LoginPage = () => {
                         </div>
 
                         {error && (
-                            <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-sm flex items-center justify-center font-medium">
+                            <div className="p-3 rounded-lg bg-danger-a20/20 border border-danger-a10/30 text-danger-a10 text-sm flex items-center justify-center font-medium">
                                 {error}
                             </div>
                         )}
@@ -82,7 +88,7 @@ const LoginPage = () => {
                         <button
                             type="submit"
                             disabled={loading}
-                            className="group relative w-full flex justify-center py-3.5 px-4 border border-transparent rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 focus:ring-offset-white dark:focus:ring-offset-zinc-800 transition-all shadow-lg shadow-indigo-500/30 overflow-hidden"
+                            className="group relative w-full flex justify-center py-4 px-4 border border-transparent rounded-xl text-sm font-bold text-white bg-primary-a10 hover:bg-primary-a0 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-a10 transition-all shadow-lg shadow-primary-a10/30 overflow-hidden active:scale-[0.98]"
                         >
                             {loading ? (
                                 <span className="animate-pulse">Verifying...</span>
@@ -96,10 +102,10 @@ const LoginPage = () => {
                 </div>
 
                 {/* Footer */}
-                <div className="px-8 py-4 bg-zinc-50 dark:bg-zinc-800/50 border-t border-zinc-100 dark:border-zinc-800 flex justify-between items-center text-xs text-zinc-500 dark:text-zinc-400">
+                <div className="px-8 py-5 bg-surface-tonal-a0 border-t border-surface-a20 flex justify-between items-center text-xs text-primary-a40 font-medium">
                     <p>DCResult &copy; 2026</p>
-                    <Link to="/admin/login" className="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center gap-1 font-medium">
-                        <Lock className="w-3 h-3" /> Admin
+                    <Link to="/admin/login" className="hover:text-primary-a10 transition-colors flex items-center gap-1">
+                        <Lock className="w-3 h-3" /> Admin Portal
                     </Link>
                 </div>
             </div>

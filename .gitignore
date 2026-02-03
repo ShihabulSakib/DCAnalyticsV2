@@ -17,7 +17,7 @@ dist-ssr
 /.gemini
 /data
 /docs
-/.agent/rules
+.agent/rules
 
 /test materials  
 /test
