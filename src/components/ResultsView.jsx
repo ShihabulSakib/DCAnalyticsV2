@@ -6,7 +6,7 @@ import ResultModal from './ResultModal';
 import AnalyticsView from './AnalyticsView';
 import Skeleton from './Skeleton';
 import Dropdown from './Dropdown';
-import { fetchExams, fetchMeritList, fetchSessions } from '../api';
+import { fetchExams, fetchMeritList, fetchSessions, logActivity } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import dataLoader, { USE_JSON_DATA } from '../services/dataLoader';
@@ -225,6 +225,15 @@ const ResultsView = () => {
         setLoading(true);
         setError('');
 
+        // Silent log access for merit list view (fire-and-forget)
+        const examName = exams.find(e => e.exam_id_text === selectedExam)?.name || selectedExam;
+        const actorRoll = isAdmin() ? 'ADMIN' : (user?.roll || null);
+        logActivity('VIEW_MERITLIST', null, {
+            exam_id: selectedExam,
+            exam_name: examName,
+            filters: { session: selectedSession, group: selectedGroup, section: selectedSection, sortBy }
+        }, actorRoll).catch(() => { }); // Silent fail
+
         try {
             // Use JSON data loader if enabled
             if (USE_JSON_DATA) {
@@ -425,54 +434,54 @@ const ResultsView = () => {
 
                 {/* Search Bar & Mobile Filter - Only in Results mode */}
                 {viewMode === 'results' && (
-                <div className="flex gap-2 w-full md:w-auto md:flex-1 md:max-w-md">
-                    <div className="relative flex-1">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
-                        <input
-                            type="text"
-                            placeholder="Search..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="w-full pl-9 pr-4 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm shadow-sm"
-                        />
-                    </div>
+                    <div className="flex gap-2 w-full md:w-auto md:flex-1 md:max-w-md">
+                        <div className="relative flex-1">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+                            <input
+                                type="text"
+                                placeholder="Search..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="w-full pl-9 pr-4 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm shadow-sm"
+                            />
+                        </div>
 
-                    {/* Mobile Filter Button */}
-                    <div className="relative">
-                        <button
-                            onClick={handleOpenMenu}
-                            className="md:hidden flex items-center gap-2 p-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors shadow-sm relative shrink-0"
-                        >
-                            <Filter size={20} />
-                            {(selectedSession !== 'All' || selectedGroup !== 'All' || selectedSection !== 'All') && (
-                                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-indigo-500 rounded-full border-2 border-white dark:border-zinc-900"></span>
-                            )}
-                        </button>
+                        {/* Mobile Filter Button */}
+                        <div className="relative">
+                            <button
+                                onClick={handleOpenMenu}
+                                className="md:hidden flex items-center gap-2 p-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors shadow-sm relative shrink-0"
+                            >
+                                <Filter size={20} />
+                                {(selectedSession !== 'All' || selectedGroup !== 'All' || selectedSection !== 'All') && (
+                                    <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-indigo-500 rounded-full border-2 border-white dark:border-zinc-900"></span>
+                                )}
+                            </button>
 
-                        <AnimatePresence>
-                            {showDiscoveryHint && (
-                                <motion.div
-                                    initial={{ opacity: 0, scale: 0.9, y: 10 }}
-                                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                                    exit={{ opacity: 0, scale: 0.9 }}
-                                    className="md:hidden absolute top-12 right-0 z-40 w-[240px]"
-                                >
-                                    <div className="relative bg-indigo-600 text-white text-xs p-3 rounded-lg shadow-xl border border-indigo-400/30">
-                                        <button onClick={handleDismissFilterHint} className="absolute top-1 right-1 text-indigo-200 hover:text-white"><X size={12} /></button>
-                                        <div className="flex gap-2">
-                                            <Filter className="w-4 h-4 text-indigo-200 shrink-0 mt-0.5" />
-                                            <div>
-                                                <p className="font-bold mb-1">Advanced Filters</p>
-                                                <p className="leading-relaxed opacity-90">Tap here to sort by Marks, filter by Section, Group, or Session.</p>
+                            <AnimatePresence>
+                                {showDiscoveryHint && (
+                                    <motion.div
+                                        initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                                        exit={{ opacity: 0, scale: 0.9 }}
+                                        className="md:hidden absolute top-12 right-0 z-40 w-[240px]"
+                                    >
+                                        <div className="relative bg-indigo-600 text-white text-xs p-3 rounded-lg shadow-xl border border-indigo-400/30">
+                                            <button onClick={handleDismissFilterHint} className="absolute top-1 right-1 text-indigo-200 hover:text-white"><X size={12} /></button>
+                                            <div className="flex gap-2">
+                                                <Filter className="w-4 h-4 text-indigo-200 shrink-0 mt-0.5" />
+                                                <div>
+                                                    <p className="font-bold mb-1">Advanced Filters</p>
+                                                    <p className="leading-relaxed opacity-90">Tap here to sort by Marks, filter by Section, Group, or Session.</p>
+                                                </div>
                                             </div>
+                                            <div className="absolute -top-1.5 right-4 w-3 h-3 bg-indigo-600 rotate-45"></div>
                                         </div>
-                                        <div className="absolute -top-1.5 right-4 w-3 h-3 bg-indigo-600 rotate-45"></div>
-                                    </div>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </div>
                     </div>
-                </div>
                 )}
 
                 {/* Desktop Filters (Visible only on Desktop) */}

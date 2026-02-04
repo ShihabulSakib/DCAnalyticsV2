@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Eye, GitCompare, LogIn, Edit, ChevronLeft, ChevronRight, RefreshCw, Filter, X, Smartphone, Monitor, Tablet } from 'lucide-react';
+import { Eye, GitCompare, LogIn, Edit, ChevronLeft, ChevronRight, RefreshCw, Filter, X, Smartphone, Monitor, Tablet, ListOrdered, Shield } from 'lucide-react';
 import { getActivityLogs } from '../../api';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -44,6 +44,11 @@ const ACTION_CONFIG = {
         icon: Edit,
         label: 'Edit Exam',
         colors: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
+    },
+    VIEW_MERITLIST: {
+        icon: ListOrdered,
+        label: 'View Merit List',
+        colors: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400'
     }
 };
 
@@ -268,6 +273,7 @@ const AccessLogTable = () => {
     const filterOptions = [
         { value: null, label: 'All Actions' },
         { value: 'VIEW_RESULT', label: 'View Result' },
+        { value: 'VIEW_MERITLIST', label: 'View Merit List' },
         { value: 'COMPARE_RESULT', label: 'Compare' },
         { value: 'LOGIN', label: 'Login' },
         { value: 'UPDATE_EXAM', label: 'Edit Exam' }
