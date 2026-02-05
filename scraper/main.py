@@ -232,6 +232,7 @@ class ResultScraper:
         chunk_size = 50
         batch_data = []
         success_count = 0
+        consecutive_failures = 0
         
         for r in range(start_roll, end_roll + 1):
             print(f"Processing Roll {r}...", end=' ', flush=True)
@@ -240,8 +241,15 @@ class ResultScraper:
             if success and data:
                 print("OK")
                 batch_data.append(data)
+                consecutive_failures = 0  # Reset counter on success
             else:
                 print(f"Failed ({msg})")
+                consecutive_failures += 1
+
+            # Check threshold
+            if consecutive_failures >= 10:
+                print(f"\n[Stop] Reached 10 consecutive failures at Roll {r}. Stopping scraper early.")
+                break
 
             if len(batch_data) >= chunk_size or r == end_roll:
                 if batch_data:

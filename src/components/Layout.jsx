@@ -46,9 +46,17 @@ const Layout = () => {
             {/* Sticky Smart Navbar (Minimal Glass) */}
             <nav className="fixed top-0 left-0 right-0 z-50 h-16 border-b border-surface-a20 bg-surface-a0/80 backdrop-blur-md flex items-center justify-between px-4 md:px-8">
                 <div className="flex items-center gap-2">
-                    <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 hover:bg-surface-a10 rounded-md text-primary-a40">
+                    <motion.button
+                        onClick={() => setIsSidebarOpen(true)}
+                        className="md:hidden p-2 hover:bg-surface-a10 rounded-md text-primary-a40"
+                        whileTap={{ scale: 0.9 }}
+                        animate={{
+                            opacity: [1, 0.7, 1],
+                            transition: { duration: 2, repeat: Infinity, ease: "easeInOut" }
+                        }}
+                    >
                         <Menu size={24} />
-                    </button>
+                    </motion.button>
                     <Link to="/" className="flex items-center gap-2 text-xl font-display font-bold tracking-tight text-primary-a10">
                         <img src="/file.svg" alt="DCAnalytics Logo" className="h-[50px] w-[50px]" />
                         <span className="bg-clip-text text-transparent bg-gradient-to-r from-primary-a10 to-primary-a30">DCAnalytics</span>
@@ -131,22 +139,49 @@ const Layout = () => {
                                 </button>
                             </div>
 
-                            <div className="flex flex-col gap-3 flex-1">
+                            <motion.div
+                                className="flex flex-col gap-3 flex-1"
+                                variants={{
+                                    hidden: { opacity: 0 },
+                                    show: {
+                                        opacity: 1,
+                                        transition: {
+                                            staggerChildren: 0.1
+                                        }
+                                    }
+                                }}
+                                initial="hidden"
+                                animate="show"
+                            >
                                 {navLinks.map((link) => (
-                                    <Link
+                                    <motion.div
                                         key={link.path}
-                                        to={link.path}
-                                        onClick={() => setIsSidebarOpen(false)}
-                                        className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${location.pathname === link.path
-                                            ? 'bg-surface-tonal-a0 text-primary-a10 font-bold shadow-sm'
-                                            : 'text-primary-a40 hover:bg-surface-a10'
-                                            }`}
+                                        variants={{
+                                            hidden: { opacity: 0, x: -20 },
+                                            show: { opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 24 } }
+                                        }}
                                     >
-                                        <link.icon size={20} />
-                                        {link.label}
-                                    </Link>
+                                        <Link
+                                            to={link.path}
+                                            onClick={() => setIsSidebarOpen(false)}
+                                            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${location.pathname === link.path
+                                                ? 'bg-surface-tonal-a0 text-primary-a10 font-bold shadow-sm'
+                                                : 'text-primary-a40 hover:bg-surface-a10'
+                                                }`}
+                                        >
+                                            <link.icon size={20} />
+                                            {link.label}
+                                            {location.pathname === link.path && (
+                                                <motion.div
+                                                    layoutId="activeSidebarIndicator"
+                                                    className="absolute left-0 w-1 h-8 bg-primary-a10 rounded-r-full"
+                                                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                                                />
+                                            )}
+                                        </Link>
+                                    </motion.div>
                                 ))}
-                            </div>
+                            </motion.div>
 
                             <div className="mt-auto space-y-3">
                                 <button onClick={toggleTheme} className="w-full flex items-center justify-center gap-2 p-4 rounded-xl border border-surface-a20 hover:bg-surface-a10 transition-colors text-primary-a50 font-medium">

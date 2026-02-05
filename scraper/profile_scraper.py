@@ -211,6 +211,8 @@ if __name__ == "__main__":
             success_count = 0
             processed_count = 0
             
+            consecutive_failures = 0
+            
             for r in range(start_roll, end_roll + 1):
                 roll_str = str(r)
                 print(f"Processing Roll {roll_str}...", end=' ', flush=True)
@@ -220,10 +222,21 @@ if __name__ == "__main__":
                 if profile_data:
                     print("OK (Queued)")
                     batch_data.append(profile_data)
+                    consecutive_failures = 0  # Reset on success
                 else:
                     print("Failed")
+                    consecutive_failures += 1
                 
                 processed_count += 1
+
+                # Stop condition
+                if consecutive_failures >= 10:
+                    print(f"\n[Stop] Reached 10 consecutive failures at Roll {r}. Stopping scraper early.")
+                    # Save whatever (if anything) is in the current batch before breaking
+                    if batch_data:
+                        print(f"--- Saving final Batch of {len(batch_data)} records ---")
+                        save_batch_profiles(batch_data)
+                    break
                 
                 # Check if we reached chunk size or end of loop
                 if len(batch_data) >= CHUNK_SIZE or (r == end_roll and len(batch_data) > 0):
