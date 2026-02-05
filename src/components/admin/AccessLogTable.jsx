@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Eye, GitCompare, LogIn, Edit, ChevronLeft, ChevronRight, RefreshCw, Filter, X, Smartphone, Monitor, Tablet, ListOrdered, Shield } from 'lucide-react';
-import { getActivityLogs } from '../../api';
+import { getActivityLogs, fetchExams } from '../../api';
 import { motion, AnimatePresence } from 'framer-motion';
 
 /**
@@ -139,6 +139,26 @@ const ActivityDetailModal = ({ log, onClose }) => {
     };
 
     const metadata = parseMetadata();
+    const [examMap, setExamMap] = useState({});
+
+    useEffect(() => {
+        const loadExamsForMap = async () => {
+            try {
+                const response = await fetchExams();
+                const exams = response.data || [];
+                const map = {};
+                exams.forEach(exam => {
+                    map[exam.exam_id_text || exam.id] = exam.name;
+                    // Also handle numeric IDs if they appear in logs differently
+                    if (exam.id) map[exam.id] = exam.name;
+                });
+                setExamMap(map);
+            } catch (err) {
+                console.error("Failed to load exams for mapping", err);
+            }
+        };
+        loadExamsForMap();
+    }, []);
 
     return (
         <motion.div
@@ -200,12 +220,20 @@ const ActivityDetailModal = ({ log, onClose }) => {
                         <div>
                             <p className="text-xs text-zinc-500 mb-1">Additional Info</p>
                             <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-3 text-sm">
-                                {Object.entries(metadata).map(([key, value]) => (
-                                    <div key={key} className="flex justify-between">
-                                        <span className="text-zinc-500">{key.replace('_', ' ')}</span>
-                                        <span className="text-zinc-900 dark:text-zinc-100 font-mono">{String(value)}</span>
-                                    </div>
-                                ))}
+                                {Object.entries(metadata).map(([key, value]) => {
+                                    // Check for exam ID keys
+                                    const isExamKey = key === 'exam_id' || key === 'exam_id_text';
+                                    const displayValue = isExamKey && examMap[value] ? examMap[value] : String(value);
+
+                                    return (
+                                        <div key={key} className="flex justify-between">
+                                            <span className="text-zinc-500">{key.replace('_', ' ')}</span>
+                                            <span className="text-zinc-900 dark:text-zinc-100 font-mono text-right ml-4">
+                                                {displayValue}
+                                            </span>
+                                        </div>
+                                    );
+                                })}
                             </div>
                         </div>
                     )}
