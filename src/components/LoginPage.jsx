@@ -102,9 +102,12 @@ const LoginPage = () => {
                 </div>
 
                 {/* Footer */}
-                <div className="px-8 py-5 bg-surface-tonal-a0 border-t border-surface-a20 flex flex-col sm:flex-row justify-between items-center gap-3 text-xs text-primary-a40 font-medium">
-                    <p>DCResult &copy; 2026</p>
-                    <p className="opacity-80">Built by 471 (DC-26)</p>
+                <div className="px-8 py-5 bg-surface-tonal-a0 border-t border-surface-a20 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs text-primary-a40 font-medium">
+                    <div className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2">
+                        <p>DCResult &copy; 2026</p>
+                        <span className="hidden sm:inline opacity-30">•</span>
+                        <p className="opacity-80">Built by 471 (DC-26)</p>
+                    </div>
                     <Link to="/admin/login" className="hover:text-primary-a10 transition-colors flex items-center gap-1">
                         <Lock className="w-3 h-3" /> Admin Portal
                     </Link>
