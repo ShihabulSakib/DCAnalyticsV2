@@ -18,6 +18,7 @@ dist-ssr
 /data
 /docs
 .agent/rules
+/venv
 
 /test materials  
 /test
