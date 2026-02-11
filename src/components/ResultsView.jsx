@@ -367,7 +367,7 @@ const ResultsView = () => {
     const groupOptions = [
         { value: 'All', label: 'All Groups' },
         { value: 'Science', label: 'Science' },
-        { value: 'Business Studies', label: 'Business' },
+        { value: 'Business Studies', label: 'Business Studies' },
         { value: 'Humanities', label: 'Humanities' }
     ];
     const sessionOptions = [
