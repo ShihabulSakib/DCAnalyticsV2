@@ -127,7 +127,14 @@ class ProfileScraper:
                 return None
 
             data['name'] = get_label_value("Name :")
-            data['group_name'] = get_label_value("Department :")
+            
+            # Clean the group name at the source
+            group_name_raw = get_label_value("Department :")
+            if group_name_raw:
+                data['group_name'] = re.sub(r'HSC\s*[-\u2013]\s*', '', group_name_raw).strip()
+            else:
+                data['group_name'] = None
+                
             data['session'] = get_label_value("Session :")
             data['academic_year'] = get_label_value("Academic Year :")
             

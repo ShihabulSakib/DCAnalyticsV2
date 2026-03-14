@@ -349,6 +349,45 @@ def save_batch_results(results_batch):
     finally:
         conn.close()
 
+def get_scraped_exam_ids():
+    """Fetches all existing exam_id_text from the database."""
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT exam_id_text FROM exams")
+            # Use a set for efficient 'in' checks
+            return {row[0] for row in cur.fetchall()}
+    finally:
+        conn.close()
+
+def get_roll_range_for_group(session_year, group_name):
+    """
+    Determines the min and max roll for a given session and group.
+    Returns (min_roll, max_roll) or (None, None).
+    """
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            # We must cast roll to a numeric type for MIN/MAX to work correctly
+            cur.execute("""
+                SELECT MIN(CAST(roll AS BIGINT)), MAX(CAST(roll AS BIGINT))
+                FROM students
+                WHERE session = %s AND student_group = %s
+            """, (session_year, group_name))
+            res = cur.fetchone()
+            # res will be (None, None) if no records match
+            if res and res[0] is not None:
+                return res
+            return None, None
+    except (psycopg2.errors.UndefinedFunction, psycopg2.errors.InvalidTextRepresentation) as e:
+        # This can happen if some rolls are not purely numeric.
+        # In this case, we can't determine a range.
+        print(f"Warning: Could not determine roll range for {session_year}/{group_name}. Rolls may not be numeric. Error: {e}")
+        return None, None
+    finally:
+        conn.close()
+
+
 def save_batch_profiles(profiles_batch):
     """
     Saves a batch of student profiles in a single transaction.

@@ -109,14 +109,55 @@ python3 scraper/main.py export
     *   Double-check your API keys in `.env`.
     *   Ensure you haven't exceeded your plan's storage or bandwidth limits.
 
-## 📂 Project Structure
+## 📂 Project Structure & File Map
 
-*   `scraper/main.py`: Central CLI entry point.
-*   `scraper/database.py`: Database connection and schema management.
-*   `scraper/robust_parser.py`: Advanced logic for extracting data from PDFs.
-*   `scraper/json_exporter.py`: Logic for generating frontend-ready JSONs.
-*   `scraper/profile_scraper.py`: Logic for HTML profile scraping.
-*   `scraper/scrape_images.py`: Logic for image fetching and uploading.
+To help you navigate the codebase, here is a breakdown of what each file does, grouped by its role in the toolkit.
+
+### 🏗️ Core Orchestrators
+*   **[main.py](file:///home/shanto/Desktop/Github/DCAnalyticsV2/scraper/main.py):** The primary CLI entry point. It wraps all major functionalities into user-friendly commands. Use this for interactive one-off tasks.
+*   **[auto_runner.py](file:///home/shanto/Desktop/Github/DCAnalyticsV2/scraper/auto_runner.py):** A non-interactive, fully automated pipeline. It chains together Result Scraping, Profile Scraping, and Data Export. **Run this for full database updates.**
+
+### 💾 Data Storage & Export
+*   **[database.py](file:///home/shanto/Desktop/Github/DCAnalyticsV2/scraper/database.py):** Manages PostgreSQL connections and the database schema. Contains `init_db()` and high-performance batch insertion functions for students, results, and profiles.
+*   **[json_exporter.py](file:///home/shanto/Desktop/Github/DCAnalyticsV2/scraper/json_exporter.py):** The bridge to the frontend. It queries the database and generates optimized, GZIP-compressed JSON files (merit lists, marks, analytics) used by the React application.
+
+### 🧠 Parsers (PDF Processing)
+*   **[robust_parser.py](file:///home/shanto/Desktop/Github/DCAnalyticsV2/scraper/robust_parser.py):** The "smart" parser. Uses `pdfplumber` for layout-aware extraction. It’s highly resilient to table variations and handles GPA calculation/lookup logic.
+*   **[parser.py](file:///home/shanto/Desktop/Github/DCAnalyticsV2/scraper/parser.py):** A lightweight utility using `pdftotext`. Useful for quick text extraction but less layout-aware than `robust_parser.py`.
+
+### 🌐 Web Scrapers
+*   **[result_scraper.py](file:///home/shanto/Desktop/Github/DCAnalyticsV2/scraper/result_scraper.py):** Handles the session-based authentication with the Dhaka College portal and downloads student result PDFs.
+*   **[profile_scraper.py](file:///home/shanto/Desktop/Github/DCAnalyticsV2/scraper/profile_scraper.py):** Scrapes student profiles (HTML) to get detailed metadata like Mother's Name, Session, and Student Group.
+*   **[scrape_images.py](file:///home/shanto/Desktop/Github/DCAnalyticsV2/scraper/scrape_images.py):** Fetches student profile photos and uploads them directly to Cloudinary.
+
+### 🛠️ Local Processing Tools
+*   **[batch_parser.py](file:///home/shanto/Desktop/Github/DCAnalyticsV2/scraper/batch_parser.py):** Processes locally stored PDFs in the `data/pdfs` directory and populates the database.
+*   **[upload_local_images.py](file:///home/shanto/Desktop/Github/DCAnalyticsV2/scraper/upload_local_images.py):** Scans the `data/images` directory and uploads files to Cloudinary, updating the database with the new URLs.
+
+---
+
+## 👨‍💻 Developer Notes & Workflow
+
+### How to Add a New Exam
+1.  Run `python3 scraper/main.py results`. 
+2.  Choose the session and faculty.
+3.  The scraper will automatically find the exams and start downloading/parsing.
+4.  Once done, run `python3 scraper/main.py export` to generate the JSON files for the web app.
+
+### Modifying the Database
+If you need to add a new column (e.g., student phone numbers):
+1.  Update `init_db()` in `scraper/database.py`.
+2.  Update the corresponding save function (e.g., `save_batch_profiles`).
+3.  Update the scraper (e.g., `profile_scraper.py`) to extract that data.
+
+### Dealing with "Broken" PDFs
+If the portal changes its PDF layout:
+*   Open `scraper/robust_parser.py`.
+*   Adjust the `extract_gpa_*` functions or the table column matching logic.
+*   Test it with `python3 scraper/main.py local-pdfs` on a small batch of downloaded PDFs.
+
+### Deployment Tip
+Always ensure your `.env` is set correctly. The `auto_runner.py` is designed to be run as a cron job if you need periodic updates during exam season.
 
 ## 🤝 Contributing
 

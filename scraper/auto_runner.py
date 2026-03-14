@@ -2,119 +2,147 @@
 import time
 import sys
 import os
-from main import ResultScraper, get_or_create_exam_id, init_db, save_batch_results
+import re
+from main import ResultScraper
+from json_exporter import JsonExporter
+from database import init_db, get_scraped_exam_ids, get_roll_range_for_group, save_batch_results, get_or_create_exam_id
 
-def run_automated_results():
-    # Initialize Database
+# --- Configuration ---
+# The number of most recent sessions to check for new exams
+SESSIONS_TO_CHECK = 2 
+# Default roll range if the database has no prior data for a group
+DEFAULT_START_ROLL = 1
+DEFAULT_END_ROLL = 8000
+# Number of consecutive failures before stopping the scrape for an exam
+CONSECUTIVE_FAILURE_THRESHOLD = 20
+
+def run_automated_results_pipeline():
+    """
+    A fully automated, non-interactive pipeline to scrape new results and export data.
+    - Iterates through the latest sessions and all their faculties.
+    - Dynamically finds new exams by comparing with the database.
+    - Determines roll range automatically with a fallback.
+    - Scrapes new exams and exports all data to JSON.
+    """
+    print("--- Starting Automated Results Pipeline ---")
+    
+    # Always initialize the database first
     init_db()
     
-    scraper = ResultScraper()
-    if not scraper.login():
-        print("Failed to login to the portal.")
-        return
-
-    # 1. Automatically select first Exam Level
-    levels = scraper.get_exam_levels()
-    if not levels:
-        print("No exam levels found.")
-        return
-    selected_level = levels[0]
-    print(f"[Auto] Selected Exam Level: {selected_level['name']}")
-
-    # 2. Ask for Faculty (Once)
-    facs = scraper.get_faculty_list(selected_level['id'])
-    if not facs:
-        print("No faculties found.")
-        return
-    print("\nAvailable Groups:")
-    for i, f in enumerate(facs):
-        print(f"{i + 1}. {f['name']}")
+    # --- 1. Scrape New Results ---
+    print(f"\n[Phase 1/2] Checking for and scraping new results...")
+    
     try:
-        f_idx = int(input("\nSelect Group: ")) - 1
-        selected_faculty = facs[f_idx]
-    except (ValueError, IndexError):
-        print("Invalid selection.")
-        return
+        scraper = ResultScraper()
+        if not scraper.login():
+            print("Fatal: Failed to login to the portal. Aborting.")
+            return
 
-    # 3. Ask for Session (Once)
-    sessions = scraper.get_session_list()
-    if not sessions:
-        print("No sessions found.")
-        return
-    print("\nAvailable Sessions (Latest 3):")
-    latest = sessions[:3]
-    for i, s in enumerate(latest):
-        print(f"{i + 1}. {s['name']}")
-    try:
-        s_idx = int(input("\nSelect Session: ")) - 1
-        selected_session = latest[s_idx]
-    except (ValueError, IndexError):
-        print("Invalid selection.")
-        return
+        # Get the list of exams we already have in our database
+        scraped_exam_ids = get_scraped_exam_ids()
+        print(f"[DB] Found {len(scraped_exam_ids)} exams already in the database.")
 
-        # 4. Ask for Roll Range (Once)
-    try:
-        start_roll = int(input("\nEnter Start Roll: ").strip())
-        end_roll = int(input("Enter End Roll: ").strip())
-    except ValueError:
-        print("Invalid roll numbers.")
-        return
+        # Get the latest sessions from the website
+        sessions = scraper.get_session_list()
+        if not sessions:
+            print("Fatal: No sessions found on the website. Aborting.")
+            return
 
-    # 5. Fetch all Exams for this Faculty + Session
-    exams = scraper.get_exam_list(selected_faculty['id'], selected_session['id'])
-    if not exams:
-        print(f"No exams found for {selected_faculty['name']} in {selected_session['name']}.")
-        return
-
-    print(f"\nFound {len(exams)} exams. Starting automated sequence...")
-    print(f"Target Roll Range: {start_roll} to {end_roll}")
-
-    # 6. Loop through all exams
-    for exam in exams:
-        print(f"\n{'='*60}")
-        print(f"EXAM: {exam['name']} (ID: {exam['id']})")
-        print(f"{'='*60}")
-
-        # Ensure exam exists in our DB
-        get_or_create_exam_id(exam['id'], exam['name'])
-
-        chunk_size = 50
-        batch_data = []
-        success_count = 0
-        consecutive_failures = 0
-
-        for r in range(start_roll, end_roll + 1):
-            print(f"[{exam['name']}] Processing Roll {r}...", end=' ', flush=True)
-            success, msg, data = scraper.scrape_student(str(r), exam['id'], exam['name'])
+        # Loop through the most recent sessions
+        for session in sessions[:SESSIONS_TO_CHECK]:
+            print(f"\n{'='*70}")
+            print(f"Processing Session: {session['name']}")
+            print(f"{'='*70}")
             
-            if success and data:
-                print("OK")
-                batch_data.append(data)
-                consecutive_failures = 0
-            else:
-                print(f"Failed ({msg})")
-                consecutive_failures += 1
+            # Get all faculties/groups for the session
+            # We assume 'HSC' for now as the logic in main.py does. This can be parameterized if needed.
+            faculties = scraper.get_faculty_list('HSC')
+            if not faculties:
+                print(f"Warning: No faculties found for session {session['name']}. Skipping.")
+                continue
 
-            # Stop if the exam seems to have no data for this range
-            if consecutive_failures >= 15:
-                print("\n[Skipping Exam] 15 consecutive failures. Moving to next exam.")
-                break
+            for faculty in faculties:
+                # Clean the faculty name from the website to match what's in our DB
+                clean_faculty_name = re.sub(r'HSC\s*[-\u2013]\s*', '', faculty['name']).strip()
+                print(f"\n--- Faculty: {clean_faculty_name} ---")
 
-            # Save in batches
-            if len(batch_data) >= chunk_size or r == end_roll:
-                if batch_data:
-                    print(f"--- Saving Batch of {len(batch_data)} ---")
-                    if save_batch_results(batch_data):
-                        success_count += len(batch_data)
+                # Find new exams for this specific session and faculty
+                web_exams = scraper.get_exam_list(faculty['id'], session['id'])
+                if not web_exams:
+                    print("No exams found on website for this faculty. Skipping.")
+                    continue
+                
+                new_exams = [exam for exam in web_exams if exam['id'] not in scraped_exam_ids]
+
+                if not new_exams:
+                    print("No new exams to scrape for this faculty. Skipping.")
+                    continue
+                
+                print(f"Found {len(new_exams)} new exam(s): {[e['name'] for e in new_exams]}")
+
+                # Determine the roll range for this group
+                start_roll, end_roll = get_roll_range_for_group(session['name'], clean_faculty_name)
+                if not start_roll:
+                    start_roll, end_roll = DEFAULT_START_ROLL, DEFAULT_END_ROLL
+                    print(f"No prior data in DB. Using default roll range: {start_roll}-{end_roll}")
+                else:
+                    # Add a buffer to the end roll to catch new students
+                    end_roll += 500 
+                    print(f"Roll range from DB: {start_roll}-{end_roll} (buffer added)")
+                
+                # Scrape each new exam
+                for exam in sorted(new_exams, key=lambda e: e['id']):
+                    print(f"\nScraping Exam: {exam['name']} (ID: {exam['id']})")
+                    get_or_create_exam_id(exam['id'], exam['name'])
+
                     batch_data = []
-            
-            time.sleep(0.4) # Slightly faster sleep for automation
+                    success_count = 0
+                    consecutive_failures = 0
 
-        print(f"\nFinished {exam['name']}: Saved {success_count} results.")
+                    for r in range(start_roll, end_roll + 1):
+                        print(f"[{exam['name']}] Processing Roll {r}...", end=' ', flush=True)
+                        success, msg, data = scraper.scrape_student(str(r), exam['id'], exam['name'])
+                        
+                        if success and data:
+                            # Data from parser is already clean.
+                            print("OK")
+                            batch_data.append(data)
+                            consecutive_failures = 0
+                        else:
+                            print(f"Failed ({msg})")
+                            consecutive_failures += 1
 
-    print("\n" + "#"*40)
-    print("ALL EXAMS COMPLETED SUCCESSFULLY")
-    print("#"*40)
+                        if consecutive_failures >= CONSECUTIVE_FAILURE_THRESHOLD:
+                            print(f"\n[Info] Reached {CONSECUTIVE_FAILURE_THRESHOLD} consecutive failures. Assuming end of results for this exam.")
+                            break
+
+                        if len(batch_data) >= 50 or (r == end_roll and batch_data):
+                            print(f"\n--- Saving Batch of {len(batch_data)} ---")
+                            if save_batch_results(batch_data):
+                                success_count += len(batch_data)
+                            batch_data = []
+                        
+                        time.sleep(0.4)
+                    
+                    print(f"\nFinished scraping {exam['name']}. Saved {success_count} new results.")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"An unexpected error occurred during result scraping: {e}")
+
+    # --- 2. Export All Data to JSON ---
+    print("\n[Phase 2/2] Exporting all data to JSON...")
+    try:
+        exporter = JsonExporter()
+        exporter.export_all() # A new method to export everything
+        exporter.close()
+        print("JSON export complete.")
+    except Exception as e:
+        print(f"An error occurred during JSON export: {e}")
+
+    print("\n--- Automated Results Pipeline Finished ---")
 
 if __name__ == "__main__":
-    run_automated_results()
+    run_automated_results_pipeline()
+

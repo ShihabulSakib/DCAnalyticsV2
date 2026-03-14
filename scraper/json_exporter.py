@@ -372,28 +372,29 @@ class JsonExporter:
         print(f"   💾 {file_size} bytes | {gz_size} bytes gzipped ({compression_ratio:.1f}% compression)")
         return path
 
+    def export_all(self):
+        """Fetches all exams from the DB and exports all related JSON files."""
+        print("--- Running Full JSON Export ---")
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT exam_id_text, name FROM exams ORDER BY id DESC")
+            exams = cur.fetchall()
+
+        if not exams:
+            print("No exams found in database to export.")
+            return
+        
+        print(f"Found {len(exams)} exams to process.")
+        for exam_id_text, name in exams:
+            print(f"\n📝 Processing: {name} (ID: {exam_id_text})")
+            self.export_merit_list(exam_id_text)
+            self.export_marksheet(exam_id_text)
+            self.export_analytics(exam_id_text)
+        print("\n✨ Full export complete!")
+
     def close(self):
         self.conn.close()
 
 if __name__ == "__main__":
     exporter = JsonExporter()
-    
-    # 1. List latest exams to export
-    with exporter.conn.cursor() as cur:
-        # We fetch exam_id_text to drive the process
-        cur.execute("SELECT exam_id_text, name FROM exams ORDER BY id DESC")
-        exams = cur.fetchall()
-
-    if not exams:
-        print("No exams found in database.")
-    else:
-        print(f"Found {len(exams)} exams to export:\n")
-        for exam_id_text, name in exams:
-            print(f"📝 Processing: {name} (ID: {exam_id_text})")
-            exporter.export_merit_list(exam_id_text)
-            exporter.export_marksheet(exam_id_text)
-            exporter.export_analytics(exam_id_text)
-            print()
-    
+    exporter.export_all()
     exporter.close()
-    print("✨ Export complete!")

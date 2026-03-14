@@ -201,7 +201,9 @@ def parse_pdf(pdf_path):
             
             group_match = re.search(r"(?:Group|\(2nd Year)\s*[:\-]?\s*(HSC\s*[-\u2013]\s*\w+)", text, re.IGNORECASE)
             if group_match:
-                student_data['student_group'] = group_match.group(1).strip()
+                full_group_name = group_match.group(1).strip()
+                # Clean the name, e.g., "HSC - Science" -> "Science"
+                student_data['student_group'] = re.sub(r'HSC\s*[-\u2013]\s*', '', full_group_name).strip()
             
             if re.search(r"Result\s*:\s*Passed", text, re.IGNORECASE):
                 student_data['status'] = 'Passed'
